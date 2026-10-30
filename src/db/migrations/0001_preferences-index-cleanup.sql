@@ -1,0 +1,1 @@
+DROP INDEX "user_preferences_user_id_idx";

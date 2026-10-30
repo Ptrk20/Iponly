@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1793367561083,
+      "tag": "0000_phase2-auth-preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793369991591,
+      "tag": "0001_preferences-index-cleanup",
+      "breakpoints": true
+    }
+  ]
+}
