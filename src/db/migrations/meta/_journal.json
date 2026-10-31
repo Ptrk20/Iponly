@@ -15,6 +15,20 @@
       "when": 1793369991591,
       "tag": "0001_preferences-index-cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793381922982,
+      "tag": "0002_fine_giant_girl",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793382299053,
+      "tag": "0003_boring_warlock",
+      "breakpoints": true
     }
   ]
 }

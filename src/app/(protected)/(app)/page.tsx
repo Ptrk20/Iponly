@@ -9,6 +9,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { SpendingDonutChart } from "@/components/charts";
+import { SavingsTransactionList } from "@/components/savings-transaction-list";
 import { PrototypeAction } from "@/components/prototype-action";
 import {
   EmptyState,
@@ -18,13 +19,10 @@ import {
   ProgressBar,
   SectionHeading,
   StatusBadge,
-  TransactionRow,
 } from "@/components/ui";
 import {
-  accountTransactions,
   budgetCategories,
   debts,
-  financialAccounts,
   installments,
   japanTrip,
   monthlyBudget,
@@ -33,37 +31,43 @@ import {
 import { formatDate, formatMonth } from "@/lib/dates";
 import {
   getSpendingBreakdown,
-  summarizeAccounts,
   summarizeBudget,
   summarizeDebts,
   summarizeTrip,
 } from "@/lib/finance";
 import { formatMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth-session";
+import { getUserPreferences } from "@/services/preferences-service";
+import { getSavingsOverview } from "@/services/savings-service";
 
 export const instant = false;
 
 export default async function HomePage() {
   const currentUser = await requireUser();
+  const [savings, preferences] = await Promise.all([
+    getSavingsOverview(currentUser.id),
+    getUserPreferences(currentUser.id),
+  ]);
   const firstName = currentUser.name.trim().split(/\s+/)[0] || "there";
-  const savings = summarizeAccounts(financialAccounts);
   const budget = summarizeBudget(monthlyBudget);
   const debtSummary = summarizeDebts(debts);
   const tripSummary = summarizeTrip(japanTrip, travelExpenses);
   const nextInstallment = [...installments].sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
   const spendingData = getSpendingBreakdown(monthlyBudget, budgetCategories);
+  const savingsChange = savings.change.get(preferences.defaultCurrencyCode) ?? 0;
+  const formattedSavingsChange = `${savingsChange >= 0 ? "+" : "−"}${formatMoney(Math.abs(savingsChange), preferences.defaultCurrencyCode)} this month`;
 
   return (
     <div className="page-stack">
       <PageHeader
         action={<PrototypeAction icon="money" label="Add transaction" variant="primary" />}
         description="Here’s your money overview. A little clarity goes a long way."
-        eyebrow="Friday, October 30"
+        eyebrow="Your financial overview"
         title={`Good morning, ${firstName}`}
       />
 
       <div className="metrics-grid">
-        <MetricCard amountMinor={savings.totalSavingsMinor} currencyCode="PHP" icon={PiggyBank} label="Total savings" supporting="Across 5 accounts" />
+        <MetricCard amountMinor={savings.totals.get(preferences.defaultCurrencyCode) ?? 0} currencyCode={preferences.defaultCurrencyCode} icon={PiggyBank} label={`Savings · ${preferences.defaultCurrencyCode}`} supporting={`${formattedSavingsChange} · ${savings.accounts.length} active accounts`} />
         <MetricCard amountMinor={debtSummary.totalOutstandingMinor} currencyCode="PHP" icon={CreditCard} label="Outstanding debt" supporting={`${debtSummary.activeCount} active plans`} tone="rose" />
         <MetricCard amountMinor={budget.remainingMinor} currencyCode="PHP" icon={Wallet} label="Budget remaining" supporting={`From your ${formatMonth(monthlyBudget.month)} plan`} tone="blue" />
         <MetricCard amountMinor={nextInstallment?.amountMinor ?? 0} currencyCode="PHP" icon={CalendarDays} label="Next installment" supporting={nextInstallment ? `Due ${formatDate(nextInstallment.dueDate, "MMM d")}` : "No upcoming payments"} tone="amber" />
@@ -87,16 +91,31 @@ export default async function HomePage() {
         </Panel>
 
         <Panel className="savings-panel">
-          <SectionHeading action={<Link className="text-link" href="/savings">View savings <ArrowRight aria-hidden="true" size={14} /></Link>} detail="A few places your money is growing" title="Your accounts" />
-          <div className="account-list">
-            {financialAccounts.slice(0, 3).map((account) => (
-              <div className="account-row" key={account.id}>
-                <span aria-hidden="true" className="account-institution-mark">{account.institution.slice(0, 1)}</span>
-                <span className="account-row-copy"><strong>{account.name}</strong><span>{account.institution}</span></span>
-                <strong className="money-small">{formatMoney(account.balanceMinor, account.currencyCode)}</strong>
+          <SectionHeading action={<Link className="text-link" href="/savings">View savings <ArrowRight aria-hidden="true" size={14} /></Link>} detail="Your saved account and goal data" title="Your savings" />
+          {savings.accounts.length === 0 ? (
+            <EmptyState description="Add your first account to start tracking your ipon." title="No savings accounts yet" />
+          ) : (
+            <>
+              <div className="savings-dashboard-totals">
+                {[...savings.totals.entries()].map(([currency, amount]) => <div key={currency}><span>Total · {currency}</span><strong>{formatMoney(amount, currency)}</strong></div>)}
               </div>
-            ))}
-          </div>
+              <div className="account-list">
+                {savings.accounts.slice(0, 3).map((account) => (
+                  <Link className="account-row savings-dashboard-account" href={`/savings/${account.id}`} key={account.id}>
+                    <span aria-hidden="true" className="account-institution-mark">{(account.institution ?? account.name).slice(0, 1)}</span>
+                    <span className="account-row-copy"><strong>{account.name}</strong><span>{account.institution || "Personal account"}</span></span>
+                    <strong className="money-small">{formatMoney(savings.balances.get(account.id) ?? 0, account.currencyCode)}</strong>
+                  </Link>
+                ))}
+              </div>
+              {savings.goals.slice(0, 2).map((goal) => (
+                <div className="dashboard-goal" key={goal.id}>
+                  <div><strong>{goal.name}</strong><span>{goal.progressPercent}% complete</span></div>
+                  <ProgressBar displayValue={`${formatMoney(goal.savedMinor, goal.currencyCode)} / ${formatMoney(goal.targetAmountMinor, goal.currencyCode)}`} label="Goal progress" max={goal.targetAmountMinor} value={goal.savedMinor} />
+                </div>
+              ))}
+            </>
+          )}
         </Panel>
 
         <Panel className="debt-panel">
@@ -135,10 +154,8 @@ export default async function HomePage() {
         </Panel>
 
         <Panel className="activity-panel">
-          <SectionHeading action={<Link className="text-link" href="/savings">All activity <ArrowRight aria-hidden="true" size={14} /></Link>} detail="Recent movement across your accounts" title="Recent activity" />
-          <div className="transaction-list">
-            {accountTransactions.slice(0, 4).map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} />)}
-          </div>
+          <SectionHeading action={<Link className="text-link" href="/savings">All activity <ArrowRight aria-hidden="true" size={14} /></Link>} detail="Your latest saved movements" title="Recent savings activity" />
+          <SavingsTransactionList accountNames={new Map(savings.recentTransactions.map((transaction) => [transaction.accountId, transaction.accountName]))} transactions={savings.recentTransactions.slice(0, 4)} />
         </Panel>
       </div>
 

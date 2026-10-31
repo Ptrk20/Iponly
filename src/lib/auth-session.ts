@@ -1,9 +1,11 @@
 import "server-only";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { getAuth } from "@/lib/auth";
 
 export async function getCurrentSession() {
+  await connection();
   const requestHeaders = await headers();
   return getAuth().api.getSession({ headers: requestHeaders });
 }

@@ -1,6 +1,79 @@
 export type CurrencyCode = "PHP" | "USD" | "EUR" | "JPY";
 
 export type AccountType = "bank" | "e-wallet" | "cash" | "savings";
+export type SavingsAccountType =
+  | "savings"
+  | "checking"
+  | "digital_wallet"
+  | "cash"
+  | "emergency_fund"
+  | "travel_fund"
+  | "other";
+export type SavingsTransactionType =
+  | "opening_balance"
+  | "deposit"
+  | "withdrawal"
+  | "adjustment_increase"
+  | "adjustment_decrease"
+  | "transfer_in"
+  | "transfer_out"
+  | "reversal";
+export type FinancialAccountStatus = "active" | "archived";
+export type SavingsGoalStatus = "active" | "completed" | "archived";
+
+export interface SavingsAccountRecord {
+  id: string;
+  userId: string;
+  name: string;
+  institution: string | null;
+  accountType: SavingsAccountType;
+  currencyCode: CurrencyCode;
+  includeInTotal: boolean;
+  color: string | null;
+  icon: string | null;
+  notes: string | null;
+  status: FinancialAccountStatus;
+  createdAt: Date;
+  updatedAt: Date;
+  archivedAt: Date | null;
+}
+
+export interface SavingsTransactionRecord {
+  id: string;
+  userId: string;
+  accountId: string;
+  transactionType: SavingsTransactionType;
+  amountMinor: number;
+  currencyCode: CurrencyCode;
+  transactionDate: Date;
+  description: string;
+  notes: string | null;
+  reason: string | null;
+  transferId: string | null;
+  reversalOfTransactionId: string | null;
+  reversedByTransactionId: string | null;
+  status: "posted" | "reversed";
+  idempotencyKey: string | null;
+  createdBy: "user" | "system" | "assistant";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface SavingsGoalRecord {
+  id: string;
+  userId: string;
+  accountId: string | null;
+  name: string;
+  currencyCode: CurrencyCode;
+  targetAmountMinor: number;
+  targetDate: Date | null;
+  notes: string | null;
+  status: SavingsGoalStatus;
+  createdAt: Date;
+  updatedAt: Date;
+  completedAt: Date | null;
+  archivedAt: Date | null;
+}
 
 export type AccountTransactionType =
   | "income"

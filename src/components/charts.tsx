@@ -78,9 +78,11 @@ export function SpendingDonutChart({ data }: { data: ChartDatum[] }) {
 export function TrendLineChart({
   data,
   series,
+  currencyCode = "PHP",
 }: {
   data: TrendDatum[];
   series: { key: string; label: string; color: string }[];
+  currencyCode?: CurrencyCode;
 }) {
   if (data.length === 0) return <div className="chart-empty">Not enough history to show a trend.</div>;
 
@@ -90,7 +92,7 @@ export function TrendLineChart({
         <LineChart data={data} margin={{ top: 8, right: 4, left: -20, bottom: 0 }}>
           <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
           <XAxis axisLine={false} dataKey="month" tickLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} />
-          <YAxis axisLine={false} tickLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} tickFormatter={(value: number) => formatAxisValue(value)} />
+          <YAxis axisLine={false} tickLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} tickFormatter={(value: number) => formatAxisValue(value, currencyCode)} />
           {series.map((item) => (
             <Line
               activeDot={{ r: 4, strokeWidth: 0 }}
@@ -103,7 +105,7 @@ export function TrendLineChart({
               type="monotone"
             />
           ))}
-          <Tooltip formatter={(value) => formatMoney(Number(value))} />
+          <Tooltip formatter={(value) => formatMoney(Number(value), currencyCode)} />
         </LineChart>
       </ResponsiveContainer>
       <div className="chart-series-key">

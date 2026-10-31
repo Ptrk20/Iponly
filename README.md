@@ -4,14 +4,14 @@ Iponly is a mobile-first personal finance application for Filipino users.
 
 **Ipon. Budget. Bayad. Gala.**
 
-## Phase 2 architecture
+## Current architecture
 
 - Next.js 16 App Router with server-enforced route-group protection.
 - Better Auth email/password authentication and database-backed sessions.
 - Neon PostgreSQL through the server-only Neon WebSocket pool and Drizzle ORM.
-- Drizzle schema/migrations for Better Auth tables and one user-owned preferences row.
-- Preference updates follow Action → Zod validation → service → user-scoped repository → Drizzle.
-- Finance screens remain labeled **Demo Preview** and use synthetic fixtures only. No financial records are persisted in Phase 2.
+- Drizzle schema/migrations for Better Auth, preferences, and the Savings Tracker.
+- User-owned operations follow Server Action → Zod validation → service → scoped repository → Drizzle.
+- Savings accounts, transaction history, and goals are persisted for the authenticated user. Budget, debt, travel, and analytics remain synthetic demo previews.
 
 ## Local setup
 
@@ -64,19 +64,44 @@ npm run db:health
 
 Do not use a production database for tests. Local ownership tests use an isolated in-memory PGlite database and apply the checked-in migrations there.
 
+## Phase 3: Savings Tracker
+
+The Savings Tracker stores three user-owned record types:
+
+- `financial_accounts`: manually tracked financial locations with currency, include-in-total preference, and active/archived state.
+- `account_transactions`: immutable posted activity using positive integer minor units, with explicit transaction types, idempotency keys, transfer links, and reversal links.
+- `savings_goals`: active/completed/archived targets. A linked goal derives its currency and progress from its account; an unlinked goal uses the user's preferred currency.
+
+Balances are calculated from the transaction ledger; no separate cached balance is maintained. Deposits, withdrawals, adjustments, and reversals each add a ledger record. Opening balances are represented as `opening_balance` transactions. Posted transactions are not deleted. Reversals add an opposite record and mark the original as reversed; opening balances must be corrected with an adjustment.
+
+Transfers lock both owned accounts in stable ID order, verify matching currency and sufficient funds, then insert linked `transfer_out` and `transfer_in` rows within one PostgreSQL transaction. Transfer movements cancel in totals. Withdrawals and transfers lock account rows before checking the ledger balance, preventing concurrent overspending. Transaction idempotency keys are unique per user; account creation also uses a per-user idempotency key.
+
+Accounts are archived only after the balance reaches zero and active linked goals are resolved. Archived accounts retain history and may be restored. Totals remain grouped by currency; Iponly does not convert currencies or synchronize with banks.
+
+Migration files are generated and checked in with Drizzle:
+
+```bash
+npm run db:generate
+npm run db:migrate
+npm run db:health
+```
+
+The migration has been exercised against isolated PGlite in tests. Apply it to a configured development database with `npm run db:migrate`; do not run tests against production.
+
 ## Security boundaries
 
 - Better Auth hashes passwords and owns session-cookie handling. Passwords and tokens are never stored in localStorage or returned from Iponly preference actions.
 - Protected pages resolve the user from the server session. Preference repository methods require that server-derived user ID; browser-supplied IDs are ignored.
 - User preferences default to PHP, `en-PH`, `Asia/Manila`, system theme, Monday week start, and incomplete onboarding.
 - Database/environment failures are returned as generic messages; logs contain no credentials, passwords, emails, or user IDs.
-- Synthetic savings, debt, budget, transaction, and travel examples are never inserted into user accounts.
+- Savings actions resolve ownership from the authenticated session and ignore browser-supplied user IDs. Composite foreign keys enforce same-user and same-currency account/transaction relationships.
+- Synthetic debt, budget, and travel examples are never inserted into user accounts.
 
-See [docs/data-ownership.md](docs/data-ownership.md) for the repository ownership convention.
+See [docs/data-ownership.md](docs/data-ownership.md) for the repository ownership convention and [docs/savings-tracker.md](docs/savings-tracker.md) for the Phase 3 ledger rules.
 
 ## Deferred
 
-Financial CRUD and real analytics, AI, social login, service workers/offline support, notifications, and bank integrations are not part of Phase 2.
+Debt and installment persistence, monthly budget persistence, travel-plan persistence, AI actions, cross-currency transfers, bank integrations, offline transaction synchronization, and Playwright E2E coverage are deferred.
 # Iponly
 
 Iponly is a mobile-first personal finance prototype for Filipino users.

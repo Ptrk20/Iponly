@@ -2,7 +2,7 @@
 
 Every user-owned repository operation must obtain its owner from the authenticated server session. Never accept `userId` as an authoritative value from a form, URL, request body, or AI tool.
 
-Required query shapes for future financial repositories:
+Required query shapes for user-owned repositories:
 
 ```ts
 findByIdForUser(recordId: string, userId: string)
@@ -12,6 +12,6 @@ archiveForUser(recordId: string, userId: string)
 
 Every read, update, and archive query must constrain both the record ID and authenticated user ID. Return not-found behavior when the pair does not match; do not reveal whether another user owns the record.
 
-Phase 2 demonstrates the rule in `preferences-repository.ts`: each query is scoped by its `userId` argument, and server actions derive that argument through `getCurrentUser()`. The PGlite tests create two users and verify that changing one user’s preferences leaves the other user and profile untouched.
+The preferences and Savings repositories follow this rule: each query takes the authenticated `userId`, and Server Actions derive it through `getCurrentUser()`. Account details are loaded using both account ID and user ID. Composite account/user/currency foreign keys enforce ownership and currency consistency for transactions and linked goals. The Savings PGlite tests create two users and verify that one user cannot access or mutate the other's records.
 
-Do not create placeholder financial tables or seed demo finance fixtures into registered users. Later financial repositories must use the same ownership pattern and add two-user isolation tests for every new user-owned data family.
+Do not seed demo finance fixtures into registered users. Future financial repositories must continue the same ownership pattern and add two-user isolation tests for each user-owned data family.

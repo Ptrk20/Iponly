@@ -3,17 +3,21 @@ import Link from "next/link";
 import { ComparisonBarChart, SpendingDonutChart, TrendLineChart } from "@/components/charts";
 import { PageHeader, Panel, ProgressBar, SectionHeading, StatusBadge } from "@/components/ui";
 import { budgetCategories, debts, monthlyBudget, monthlyFinancialTrend } from "@/data/fixtures";
+import { requireUser } from "@/lib/auth-session";
 import { getSpendingBreakdown } from "@/lib/finance";
 import { calculatePercentage, formatMoney } from "@/lib/money";
+import { getSavingsOverview } from "@/services/savings-service";
 
-export default function AnalyticsPage() {
+export default async function AnalyticsPage() {
+  const user = await requireUser();
+  const savings = await getSavingsOverview(user.id);
   const incomeAndSpending = monthlyFinancialTrend.map(({ month, income, spending }) => ({ month, income, spending }));
   const spendingTrend = monthlyFinancialTrend.map(({ month, spending }) => ({ month, spending }));
 
   return (
     <div className="page-stack">
       <PageHeader
-        action={<StatusBadge tone="planning">Sample insights</StatusBadge>}
+        action={<StatusBadge tone="planning">Savings live · other modules demo</StatusBadge>}
         description="A clearer view of where you’ve been and what you’re building."
         eyebrow="Patterns, not pressure"
         title="Analytics"
@@ -21,8 +25,17 @@ export default function AnalyticsPage() {
 
       <div className="analytics-grid">
         <Panel>
-          <SectionHeading detail="Balances across your demo accounts" title="Savings trend" />
-          <TrendLineChart data={monthlyFinancialTrend} series={[{ key: "savings", label: "Total savings", color: "var(--brand)" }]} />
+          <SectionHeading detail="Balances from your saved account transactions" title="Savings trend" />
+          {savings.trend.length === 0
+            ? <div className="analytics-empty"><PiggyBank aria-hidden="true" size={22} /><span>Add savings transactions to build a trend.</span></div>
+            : savings.trend.map((series) => (
+                <TrendLineChart
+                  currencyCode={series.currencyCode}
+                  data={series.data.map((point) => ({ month: point.month, balance: point.balanceMinor }))}
+                  key={series.currencyCode}
+                  series={[{ key: "balance", label: "Balance", color: "var(--brand)" }]}
+                />
+              ))}
         </Panel>
 
         <Panel>

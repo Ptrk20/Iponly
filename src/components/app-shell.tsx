@@ -115,7 +115,7 @@ export function AppShell({
           <LogoutButton iconOnly />
         </header>
 
-        <div className="demo-disclaimer" role="note">Demo Preview: financial figures and activity are synthetic examples, not your personal records.</div>
+        <div className="demo-disclaimer" role="note">Savings uses your saved records. Budget, debt, travel, and analytics still contain synthetic demo figures.</div>
         <main className="main-content" id="main-content">{children}</main>
       </div>
 
