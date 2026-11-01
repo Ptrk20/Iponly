@@ -28,9 +28,7 @@ const primaryNavigation: { href: string; label: string; icon: LucideIcon }[] = [
 
 const secondaryNavigation: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/analytics", label: "Analytics", icon: ChartNoAxesCombined },
-  ...(process.env.NODE_ENV !== "production"
-    ? [{ href: "/assistant", label: "Iponly AI", icon: Sparkles }]
-    : []),
+  { href: "/assistant", label: "Iponly AI", icon: Sparkles },
   { href: "/settings", label: "Settings", icon: Settings2 },
 ];
 
@@ -110,13 +108,11 @@ export function AppShell({
             <strong>Iponly</strong>
           </Link>
           <div className="topbar-spacer" />
-          {process.env.NODE_ENV !== "production" ? (
-            <Link aria-label="Ask Iponly AI" className="assistant-quick-link" href="/assistant">
-              <Sparkles aria-hidden="true" size={17} />
-              <span>Ask AI</span>
-            </Link>
-          ) : null}
-          <Link aria-label={`Settings for ${profile.name}`} className="topbar-profile" href="/settings">
+          <Link aria-label="Ask Iponly AI" className="assistant-quick-link" href="/assistant">
+            <Sparkles aria-hidden="true" size={17} />
+            <span>Ask AI</span>
+          </Link>
+          <Link aria-label={`Settings for ${profile.name}`} className="topbar-profile" href="/settings" title="Settings">
             <span aria-hidden="true" className="profile-avatar">{initials}</span>
           </Link>
           <LogoutButton iconOnly />

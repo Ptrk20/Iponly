@@ -66,7 +66,7 @@ export function PreferencesForm({
       <label className="form-field"><span>Timezone</span><input autoComplete="off" onChange={(event) => update("timezone", event.target.value)} placeholder="Asia/Manila" required value={values.timezone} /></label>
       <label className="form-field"><span>Theme</span><select onChange={(event) => update("theme", event.target.value as PreferenceValues["theme"])} value={values.theme}><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
       <label className="form-field"><span>First day of week</span><select onChange={(event) => update("firstDayOfWeek", event.target.value as PreferenceValues["firstDayOfWeek"])} value={values.firstDayOfWeek}><option value="monday">Monday</option><option value="sunday">Sunday</option></select></label>
-      {!onboarding && process.env.NODE_ENV !== "production" ? (
+      {!onboarding ? (
         <label className="settings-row">
           <span className="settings-row-copy"><strong>Enable Iponly AI Actions</strong><span>Allow Iponly AI to prepare changes for your explicit confirmation.</span></span>
           <input checked={values.aiActionsEnabled} onChange={(event) => update("aiActionsEnabled", event.target.checked)} type="checkbox" />

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const streamState = vi.hoisted(() => ({
   parts: [] as Array<{ type: "text-delta"; text: string } | { type: "error" | "tool-error"; error: unknown }>,
@@ -45,7 +45,7 @@ import { getCurrentUser } from "@/lib/auth-session";
 import { getAIConfiguration } from "@/lib/ai/config";
 import { getUserPreferences } from "@/services/preferences-service";
 
-describe("Iponly AI chat route", () => {
+describe.each(["development", "production"])("Iponly AI chat route in %s", (environment) => {
   const authenticatedUser = {
     id: `assistant-route-${crypto.randomUUID()}`,
     name: "Test User",
@@ -57,6 +57,8 @@ describe("Iponly AI chat route", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("NODE_ENV", environment);
+    vi.stubEnv("BETTER_AUTH_URL", "https://iponly.test");
     streamState.parts = [{ type: "text-delta", text: "Test answer" }];
     vi.mocked(getCurrentUser).mockResolvedValue(null);
     vi.mocked(getAIConfiguration).mockReturnValue({
@@ -82,6 +84,36 @@ describe("Iponly AI chat route", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("reports unavailable provider configuration without disabling the endpoint", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue({ ...authenticatedUser, id: crypto.randomUUID() });
+    vi.mocked(getAIConfiguration).mockReturnValue(null);
+    const response = await POST(new Request("https://iponly.test/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ messages: [{ role: "user", content: "Show my savings." }] }),
+    }));
+
+    expect(response.status).toBe(503);
+    expect((await response.json()).error).toContain("not configured");
+    expect(streamText).not.toHaveBeenCalled();
+  });
+
+  it("rejects cross-origin chat requests before calling the provider", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(authenticatedUser);
+    const response = await POST(new Request("https://iponly.test/api/chat", {
+      method: "POST",
+      headers: { origin: "https://attacker.test" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "Show my savings." }] }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(streamText).not.toHaveBeenCalled();
+    expect(generateText).not.toHaveBeenCalled();
   });
 
   it("rejects direct unauthenticated chat API requests", async () => {

@@ -6,7 +6,7 @@ Iponly is a mobile-first personal finance application for Filipino users.
 
 ## Iponly v1.0
 
-The v1.0 release includes authenticated Savings, Debt & Installments, Monthly Budgeting, Financial Analytics, Travel Planning, account preferences, user-owned JSON data export, and installable PWA support. Iponly AI and AI actions are planned future features and are not available in the production v1.0 interface or API.
+The v1.0 release includes authenticated Savings, Debt & Installments, Monthly Budgeting, Financial Analytics, Travel Planning, Iponly AI with opt-in confirmed actions, account preferences, user-owned JSON data export, and installable PWA support. Iponly AI requires a configured provider; the rest of Iponly works without AI credentials.
 
 ## Current architecture
 
@@ -147,9 +147,13 @@ The authenticated Analytics page summarizes Savings balances and trends, Budget 
 
 See [docs/analytics.md](docs/analytics.md) for metric definitions, date boundaries, currency behavior, deduplication, historical inclusion, security, and known limitations.
 
-## Future plans
+## Iponly AI in v1.0
 
-Iponly AI and confirmed AI actions are planned, but are excluded from the v1.0 production interface. The core application does not require AI credentials or an AI provider to build or run. The development-only AI work is not part of the production release.
+On mobile, open user Settings from the profile avatar in the header next to Ask AI. The five main modules remain in the bottom navigation.
+
+Iponly AI is available from the sidebar and the header's Ask AI link, including in production. Configure `AI_API_KEY`, `AI_PROVIDER`, and `AI_MODEL` in the hosting provider's environment settings for the deployment you use, then redeploy. These are app environment variables, not GitHub Actions secrets. Use a key and a tool-calling model from the selected provider; never expose the key with a `NEXT_PUBLIC_` prefix. See [docs/iponly-ai.md](docs/iponly-ai.md) for OpenAI, OpenRouter, and Vercel AI Gateway setup and provider privacy considerations.
+
+AI Actions remain off by default. Users can enable them in Settings; every supported write requires a separate explicit confirmation, and proposals and outcomes are available at `/assistant/history`. Apply the tracked AI migrations to the deployment database before using actions. Without valid provider configuration, the assistant shows an unavailable state rather than making provider requests; the rest of Iponly remains usable. Provider usage may incur costs. Existing rate limits are per application instance, not globally shared across serverless instances.
 
 ## Phase 7: Travel Planner
 
@@ -164,5 +168,5 @@ Amounts remain integer minor units and are grouped by currency. Trip-budget prog
 - [ ] Pass `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build`.
 - [ ] Verify login, logout, onboarding, user ownership, core financial workflows, and the JSON export against a non-production account.
 - [ ] Verify `/manifest.webmanifest`, both icon assets, install/standalone behavior, offline fallback, and explicit update behavior on supported browsers.
-- [ ] Complete production smoke tests and confirm no AI routes or credentials are enabled.
+- [ ] Configure the AI provider in the deployment environment and verify authenticated chat, safe provider errors, and action history. Verify that disabled AI Actions cannot write, cancellation makes no change, and repeated confirmations do not create duplicate records. Configure provider spending limits; use a shared rate-limit store if globally consistent serverless limits are required.
 - [ ] Confirm backup and restore procedures; the user JSON export is not a database backup.

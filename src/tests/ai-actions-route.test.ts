@@ -21,7 +21,7 @@ import { cancelAIActionProposal, confirmAIActionProposal } from "@/services/ai-a
 import { findAIActionProposalForUser } from "@/repositories/ai-action-repository";
 import { consumeAIActionRequest } from "@/lib/ai/action-rate-limit";
 
-describe("Iponly AI action route", () => {
+describe.each(["development", "production"])("Iponly AI action route in %s", (environment) => {
   const user = {
     id: `ai-action-route-${crypto.randomUUID()}`,
     name: "Test User",
@@ -62,6 +62,7 @@ describe("Iponly AI action route", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("NODE_ENV", environment);
     vi.stubEnv("BETTER_AUTH_URL", "https://iponly.test");
     vi.mocked(getCurrentUser).mockResolvedValue(user);
     vi.mocked(consumeAIActionRequest).mockReturnValue({ allowed: true, retryAfterSeconds: 0 });

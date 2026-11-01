@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { AssistantActionHistory } from "@/components/assistant-action-history";
 import { requireUser } from "@/lib/auth-session";
 import { getAIActionHistory } from "@/services/ai-action-service";
@@ -13,7 +12,6 @@ export const metadata: Metadata = {
 export const instant = false;
 
 export default async function AssistantHistoryPage() {
-  if (process.env.NODE_ENV === "production") notFound();
   const user = await requireUser();
   const entries = await getAIActionHistory(user.id);
   return (

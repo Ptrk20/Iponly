@@ -51,10 +51,6 @@ async function readBoundedBody(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (process.env.NODE_ENV === "production") {
-    return new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
-  }
-
   let user;
   try {
     user = await getCurrentUser();

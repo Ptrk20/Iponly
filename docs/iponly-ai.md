@@ -1,6 +1,6 @@
 # Iponly AI (Phases 8–9)
 
-> **v1.0 release status:** Iponly AI is development-only and is not included in the production release. The `/assistant` pages and AI POST endpoints return not-found responses in production; no AI provider variables are required or should be configured for the v1.0 deployment. The provider setup below applies only to a separately authorized development environment.
+> **v1.0 release status:** Iponly AI is included in production. Authenticated users can open `/assistant` and `/assistant/history`; chat requires a configured provider. AI Actions are opt-in and always require explicit confirmation. The rest of Iponly works without AI credentials.
 
 Iponly AI is an authenticated assistant for information already recorded in Iponly. It can summarize Savings, Debt, Budget, Analytics, and Travel data, and—when enabled—prepare supported changes for explicit user confirmation. It does not provide personalized financial, investment, tax, legal, or credit advice.
 
@@ -63,7 +63,7 @@ AI_MODEL="inclusionai/ling-3.1-flash-1019"
 
 Vercel AI Gateway keys are not OpenRouter or OpenAI keys. The gateway uses its own endpoint through the AI SDK's `createGateway`; it requires an explicit gateway model identifier, tool-calling support, and available credits/access. A 401/403 may indicate that the key was issued by a different service than the selected provider.
 
-Set these values only in the project-root `.env.local` for local development, then restart the server. Do not configure these variables in the Iponly v1.0 production environment. Provider requests and model usage may incur cost.
+Set these values in the project-root `.env.local` for local development, then restart the server. For production, set them in your hosting provider's environment settings for the intended deployment environment, then redeploy. They are app configuration, not notification workflow secrets. Apply the tracked AI migrations to the deployment database before using actions. Provider requests and model usage may incur cost; configure provider spending limits and monitor usage. The existing in-memory rate limits are per instance, so use a shared rate-limit store if globally consistent serverless limits are required.
 
 An HTTP 403 with an HTML response instead of a gateway error can indicate a network/proxy access-policy block. The assistant reports this separately from credential failures. Ask your network administrator to allow `https://ai-gateway.vercel.sh` for Vercel AI Gateway; trusting a corporate CA fixes certificate verification but does not override network access policies. Do not disable TLS checks or bypass organization network controls.
 
