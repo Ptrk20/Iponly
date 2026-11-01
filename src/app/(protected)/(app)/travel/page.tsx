@@ -1,82 +1,96 @@
 import Link from "next/link";
-import { MapPin } from "lucide-react";
-import { PrototypeAction } from "@/components/prototype-action";
-import { EmptyState, PageHeader, Panel, ProgressBar, SectionHeading, StatusBadge } from "@/components/ui";
-import { itineraryItems, travelExpenses, travelTodos, trips } from "@/data/fixtures";
+import { ArrowRight, MapPin, Plane } from "lucide-react";
+import { TravelArchiveButton, TravelJoinTrip, TravelTripListActions } from "@/components/travel-actions";
+import { EmptyState, PageHeader, Panel, StatusBadge } from "@/components/ui";
 import { formatDate } from "@/lib/dates";
-import { summarizeTrip } from "@/lib/finance";
 import { formatMoney } from "@/lib/money";
+import { requireUser } from "@/lib/auth-session";
+import { getUserPreferences } from "@/services/preferences-service";
+import { getSharedTrips, getTravelChoices, getTravelPageData } from "@/services/travel-service";
+import type { CurrencyCode } from "@/types/domain";
 
-export default function TravelPage() {
-  const trip = trips.find((item) => item.status === "planning" || item.status === "booked");
+export const instant = false;
 
-  if (!trip) {
-    return (
-      <div className="page-stack">
-        <PageHeader action={<PrototypeAction icon="plus" label="Plan a trip" variant="primary" />} description="Keep the plans and the budget together." eyebrow="Make room for a gala" title="Travel planner" />
-        <Panel><EmptyState description="Start planning your next gala." title="No trips planned" /></Panel>
-      </div>
-    );
-  }
-
-  const expenses = travelExpenses.filter((expense) => expense.tripId === trip.id);
-  const summary = summarizeTrip(trip, expenses);
-  const itinerary = itineraryItems.filter((item) => item.tripId === trip.id);
-  const todos = travelTodos.filter((item) => item.tripId === trip.id && item.list === "to-do");
-  const packing = travelTodos.filter((item) => item.tripId === trip.id && item.list === "packing");
-
+export default async function TravelPage() {
+  const user = await requireUser();
+  const [data, choices, preferences, shared] = await Promise.all([
+    getTravelPageData(user.id),
+    getTravelChoices(user.id),
+    getUserPreferences(user.id),
+    getSharedTrips(user.id),
+  ]);
   return (
     <div className="page-stack">
-      <PageHeader action={<PrototypeAction icon="plus" label="Add trip" variant="primary" />} description="Plan the experience and keep the numbers in view." eyebrow="Make room for a gala" title="Travel planner" />
-
-      <section aria-labelledby="trip-title" className="trip-hero">
-        <div className="trip-hero-content">
-          <p className="eyebrow">Featured trip</p>
-          <div className="trip-hero-title-row"><div><h2 id="trip-title">{trip.name}</h2><p><MapPin aria-hidden="true" size={14} /> {trip.destination} · {formatDate(trip.startDate, "MMM d")}–{formatDate(trip.endDate, "MMM d, yyyy")}</p></div><StatusBadge tone={trip.status}>{trip.status}</StatusBadge></div>
-          <div className="trip-hero-stats">
-            <div><span>Travel budget</span><strong>{formatMoney(trip.budgetMinor, trip.currencyCode)}</strong></div>
-            <div><span>Planned expenses</span><strong>{formatMoney(summary.plannedMinor, trip.currencyCode)}</strong></div>
-            <div><span>Actual so far</span><strong>{formatMoney(summary.actualMinor, trip.currencyCode)}</strong></div>
-          </div>
-          <div className="trip-progress"><ProgressBar displayValue={`${summary.utilizationPercent}% of budget spent`} label={`Remaining ${formatMoney(summary.remainingMinor, trip.currencyCode)}`} max={trip.budgetMinor} value={summary.actualMinor} /></div>
-        </div>
-      </section>
-
-      <nav aria-label="Trip sections" className="trip-section-nav">
-        <a href="#overview">Overview</a><a href="#expenses">Expenses</a><a href="#itinerary">Itinerary</a><a href="#to-dos">To-dos</a><a href="#packing">Packing</a>
-      </nav>
-
-      <div className="overview-grid" id="overview">
-        <div className="span-7" id="expenses">
-          <Panel>
-            <SectionHeading action={<PrototypeAction icon="plus" label="Add expense" variant="quiet" />} detail="Planned and actual amounts · PHP" title="Trip expenses" />
-            {expenses.length === 0 ? <EmptyState description="Add your first flight, stay, or activity." title="No expenses planned" /> : <div>{expenses.map((expense) => <div className="travel-expense-row" key={expense.id}><div><strong>{expense.name}</strong><small>{expense.category}</small></div><div className="travel-amounts"><small>Planned</small><strong>{formatMoney(expense.plannedMinor, expense.currencyCode)}</strong></div><div className="travel-amounts"><small>Actual</small><strong>{formatMoney(expense.actualMinor, expense.currencyCode)}</strong></div><StatusBadge>{expense.actualMinor > 0 ? "Deposit paid" : "Planned"}</StatusBadge></div>)}</div>}
-          </Panel>
-        </div>
-
-        <div className="span-5" id="itinerary">
-          <Panel>
-            <SectionHeading action={<PrototypeAction icon="calendar" label="Add itinerary" variant="quiet" />} detail="A flexible first draft" title="Itinerary" />
-            {itinerary.length === 0 ? <EmptyState description="Add a few anchor plans to get started." title="No itinerary yet" /> : <div className="itinerary-list">{itinerary.map((item) => <article className="itinerary-item" key={item.id}><time className="itinerary-date" dateTime={item.date}>{formatDate(item.date, "EEE, MMM d")}</time><div><h3>{item.title}</h3><p>{item.time} · {item.location}</p></div></article>)}</div>}
-          </Panel>
-        </div>
-
-        <div className="span-6" id="to-dos">
-          <Panel>
-            <SectionHeading action={<PrototypeAction icon="todo" label="Add to-do" variant="quiet" />} detail="Before you go" title="To-dos" />
-            {todos.length === 0 ? <EmptyState description="Trip prep items will show up here." title="Nothing on the list" /> : <div className="todo-list">{todos.map((item) => <label className="todo-item" key={item.id}><input className="todo-check" checked={item.completed} disabled type="checkbox" /><span className={item.completed ? "todo-complete" : ""}>{item.title}{item.dueDate ? <small>Due {formatDate(item.dueDate, "MMM d")}</small> : null}</span></label>)}</div>}
-          </Panel>
-        </div>
-
-        <div className="span-6" id="packing">
-          <Panel>
-            <SectionHeading detail="A small list for the essentials" title="Packing list" />
-            {packing.length === 0 ? <EmptyState description="Packing reminders will show up here." title="Your bag is still open" /> : <div className="todo-list">{packing.map((item) => <label className="todo-item" key={item.id}><input className="todo-check" checked={item.completed} disabled type="checkbox" /><span className={item.completed ? "todo-complete" : ""}>{item.title}</span></label>)}</div>}
-          </Panel>
-        </div>
+      <PageHeader description="Plan the experience and keep the numbers in view." eyebrow="Make room for a gala" title="Travel planner" />
+      <div className="travel-list-actions">
+        <TravelTripListActions choices={choices} currencyCode={preferences.defaultCurrencyCode} />
+        <TravelJoinTrip />
       </div>
-
-      <Link className="text-link travel-back-link" href="/budget">See how travel fits your monthly plan <span aria-hidden="true">→</span></Link>
+      {shared.length > 0 ? (
+        <section className="page-stack">
+          <h2>Shared with me</h2>
+          <div className="travel-trip-grid">
+            {shared.map(({ trip, role, ownerName }) => (
+              <Panel className="travel-trip-card" key={trip.id}>
+                <div className="trip-mini-top"><StatusBadge tone={trip.status}>{trip.status}</StatusBadge><Plane aria-hidden="true" size={18} /></div>
+                <h3>{trip.name}</h3>
+                <p className="travel-trip-destination"><MapPin aria-hidden="true" size={14} />{trip.destination}</p>
+                <p className="travel-trip-dates">Shared by {ownerName} · {role === "editor" ? "Can edit" : "View only"}</p>
+                <div className="travel-trip-actions">
+                  <Link className="text-link" href={`/travel/${trip.id}`}>Open trip <ArrowRight aria-hidden="true" size={14} /></Link>
+                </div>
+              </Panel>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {data.activeTrips.length === 0 ? (
+        <Panel><EmptyState description="Create a trip to keep the itinerary, bookings, and expenses in one place." title="No trips planned" /></Panel>
+      ) : (
+        <section aria-label="Your trips" className="travel-trip-grid">
+          {data.activeTrips.map(({ trip, plannedTotals, actualTotals, budgetRemainingMinor, utilizationPercent }) => (
+            <Panel className="travel-trip-card" key={trip.id}>
+              <div className="trip-mini-top"><StatusBadge tone={trip.status}>{trip.status}</StatusBadge><Plane aria-hidden="true" size={18} /></div>
+              <h2>{trip.name}</h2>
+              <p className="travel-trip-destination"><MapPin aria-hidden="true" size={14} />{trip.destination}</p>
+              <p className="travel-trip-dates">
+                {trip.startDate ? formatDate(trip.startDate, "MMM d, yyyy") : "Dates not set"}
+                {trip.endDate ? ` – ${formatDate(trip.endDate, "MMM d, yyyy")}` : ""}
+              </p>
+              <dl className="travel-trip-metrics">
+                <div><dt>Trip budget</dt><dd>{formatMoney(trip.totalBudgetMinor, trip.baseCurrencyCode)}</dd></div>
+                <div><dt>Planned</dt><dd>{formatCurrencyTotals(plannedTotals)}</dd></div>
+                <div><dt>Actual</dt><dd>{formatCurrencyTotals(actualTotals)}</dd></div>
+                <div><dt>Budget remaining</dt><dd>{budgetRemainingMinor === null ? "Not set" : formatMoney(budgetRemainingMinor, trip.baseCurrencyCode)}</dd></div>
+                <div><dt>Budget used</dt><dd>{utilizationPercent === null ? "Not set" : `${utilizationPercent}%`}</dd></div>
+              </dl>
+              <div className="travel-trip-actions">
+                <Link className="text-link" href={`/travel/${trip.id}`}>Open trip <ArrowRight aria-hidden="true" size={14} /></Link>
+                                <TravelArchiveButton archived={false} tripId={trip.id} />
+                              </div>
+            </Panel>
+          ))}
+        </section>
+      )}
+      {data.archivedTrips.length > 0 ? (
+        <section className="page-stack">
+          <h2>Archived trips</h2>
+          <div className="travel-trip-grid">
+            {data.archivedTrips.map(({ trip }) => (
+              <Panel className="travel-trip-card" key={trip.id}>
+                <div className="trip-mini-top"><StatusBadge>archived</StatusBadge></div>
+                <h3>{trip.name}</h3>
+                <p>{trip.destination}</p>
+                <TravelArchiveButton archived tripId={trip.id} />
+              </Panel>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
+}
+
+function formatCurrencyTotals(totals: Array<{ currencyCode: CurrencyCode; amountMinor: number }>) {
+  return totals.length ? totals.map((total) => formatMoney(total.amountMinor, total.currencyCode)).join(" · ") : "—";
 }

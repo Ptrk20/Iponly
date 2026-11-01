@@ -90,6 +90,7 @@ export const accountTransactions = pgTable(
   },
   (table) => [
     uniqueIndex("account_transactions_id_user_id_unique").on(table.id, table.userId),
+    uniqueIndex("account_transactions_id_user_currency_unique").on(table.id, table.userId, table.currencyCode),
     uniqueIndex("account_transactions_user_idempotency_key_unique").on(table.userId, table.idempotencyKey),
     uniqueIndex("account_transactions_reversal_of_unique").on(table.reversalOfTransactionId),
     uniqueIndex("account_transactions_reversed_by_unique").on(table.reversedByTransactionId),
@@ -147,6 +148,7 @@ export const savingsGoals = pgTable(
     archivedAt: timestamp("archived_at", { withTimezone: true, mode: "date" }),
   },
   (table) => [
+    uniqueIndex("savings_goals_id_user_currency_unique").on(table.id, table.userId, table.currencyCode),
     foreignKey({
       name: "savings_goals_account_user_fk",
       columns: [table.accountId, table.userId, table.currencyCode],

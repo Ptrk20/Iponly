@@ -23,6 +23,7 @@ import {
   findTransactionsForAccount,
   findTransferForUser,
   markTransactionReversedForUser,
+  type SavingsDatabaseTransaction,
 } from "@/repositories/account-transaction-repository";
 import {
   createGoalForUser,
@@ -376,61 +377,68 @@ export async function reverseSavingsTransaction(
   input: { transactionId: string; reason: string; idempotencyKey: string },
   database: IponlyDatabase = getDatabase(),
 ) {
-  return database.transaction(async (transaction) => {
-    const original = await findTransactionByIdForUser(input.transactionId, userId, transaction);
-    if (!original) throw new SavingsRuleError("This transaction could not be found.");
-    const duplicate = await findTransactionByIdempotencyKey(userId, input.idempotencyKey, transaction);
-    if (duplicate) {
-      const matchesOriginal = duplicate.reversalOfTransactionId === original.id ||
-        Boolean(original.transferId && duplicate.transferId === original.transferId && duplicate.transactionType === "reversal");
-      if (!matchesOriginal || duplicate.reason !== input.reason) {
-        throw new SavingsRuleError("This reversal submission key was already used for a different correction.");
-      }
-      return { transactionId: duplicate.id, balanceMinor: await getBalanceForAccount(duplicate.accountId, userId, transaction), currencyCode: duplicate.currencyCode, duplicate: true };
-    }
-    if (original.transactionType === "reversal") throw new SavingsRuleError("Reversal records cannot be reversed again.");
-    if (original.transactionType === "opening_balance") {
-      throw new SavingsRuleError("Opening balances cannot be reversed. Record a balance adjustment instead.");
-    }
+  return database.transaction((transaction) =>
+    reverseSavingsTransactionInTransaction(userId, input, transaction));
+}
 
-    let originals = [original];
-    if (original.transferId) {
-      originals = await findTransferForUser(original.transferId, userId, transaction);
-      if (originals.length !== 2) throw new SavingsRuleError("This transfer cannot be safely reversed.");
+export async function reverseSavingsTransactionInTransaction(
+  userId: string,
+  input: { transactionId: string; reason: string; idempotencyKey: string },
+  transaction: SavingsDatabaseTransaction,
+) {
+  const original = await findTransactionByIdForUser(input.transactionId, userId, transaction);
+  if (!original) throw new SavingsRuleError("This transaction could not be found.");
+  const duplicate = await findTransactionByIdempotencyKey(userId, input.idempotencyKey, transaction);
+  if (duplicate) {
+    const matchesOriginal = duplicate.reversalOfTransactionId === original.id ||
+      Boolean(original.transferId && duplicate.transferId === original.transferId && duplicate.transactionType === "reversal");
+    if (!matchesOriginal || duplicate.reason !== input.reason) {
+      throw new SavingsRuleError("This reversal submission key was already used for a different correction.");
     }
-    if (originals.some((item) => item.status !== "posted" || item.reversedByTransactionId)) {
-      throw new SavingsRuleError("This transaction has already been reversed.");
-    }
-    const locked = await lockAccountsForUser(originals.map((item) => item.accountId), userId, transaction);
-    if (locked.length !== originals.length) throw new SavingsRuleError("This transaction could not be found.");
+    return { transactionId: duplicate.id, balanceMinor: await getBalanceForAccount(duplicate.accountId, userId, transaction), currencyCode: duplicate.currencyCode, duplicate: true };
+  }
+  if (original.transactionType === "reversal") throw new SavingsRuleError("Reversal records cannot be reversed again.");
+  if (original.transactionType === "opening_balance") {
+    throw new SavingsRuleError("Opening balances cannot be reversed. Record a balance adjustment instead.");
+  }
 
-    const reversalRows: Array<{ originalId: string; reversalId: string; accountId: string }> = [];
-    for (const [index, item] of originals.entries()) {
-      const reversal = await createTransactionForUser(userId, {
-        accountId: item.accountId,
-        transactionType: "reversal",
-        amountMinor: item.amountMinor,
-        currencyCode: item.currencyCode,
-        transactionDate: new Date(),
-        description: `Reversal: ${item.description}`,
-        notes: input.reason,
-        reason: input.reason,
-        transferId: item.transferId,
-        reversalOfTransactionId: item.id,
-        idempotencyKey: `${input.idempotencyKey}:${index}`,
-      }, transaction);
-      const marked = await markTransactionReversedForUser(item.id, userId, reversal.id, transaction);
-      if (!marked) throw new SavingsRuleError("This transaction has already been reversed.");
-      reversalRows.push({ originalId: item.id, reversalId: reversal.id, accountId: item.accountId });
-    }
-    const accountId = original.accountId;
-    return {
-      transactionId: reversalRows[0]?.reversalId,
-      balanceMinor: await getBalanceForAccount(accountId, userId, transaction),
-      currencyCode: original.currencyCode,
-      duplicate: false,
-    };
-  });
+  let originals = [original];
+  if (original.transferId) {
+    originals = await findTransferForUser(original.transferId, userId, transaction);
+    if (originals.length !== 2) throw new SavingsRuleError("This transfer cannot be safely reversed.");
+  }
+  if (originals.some((item) => item.status !== "posted" || item.reversedByTransactionId)) {
+    throw new SavingsRuleError("This transaction has already been reversed.");
+  }
+  const locked = await lockAccountsForUser(originals.map((item) => item.accountId), userId, transaction);
+  if (locked.length !== originals.length) throw new SavingsRuleError("This transaction could not be found.");
+
+  const reversalRows: Array<{ originalId: string; reversalId: string; accountId: string }> = [];
+  for (const [index, item] of originals.entries()) {
+    const reversal = await createTransactionForUser(userId, {
+      accountId: item.accountId,
+      transactionType: "reversal",
+      amountMinor: item.amountMinor,
+      currencyCode: item.currencyCode,
+      transactionDate: new Date(),
+      description: `Reversal: ${item.description}`,
+      notes: input.reason,
+      reason: input.reason,
+      transferId: item.transferId,
+      reversalOfTransactionId: item.id,
+      idempotencyKey: `${input.idempotencyKey}:${index}`,
+    }, transaction);
+    const marked = await markTransactionReversedForUser(item.id, userId, reversal.id, transaction);
+    if (!marked) throw new SavingsRuleError("This transaction has already been reversed.");
+    reversalRows.push({ originalId: item.id, reversalId: reversal.id, accountId: item.accountId });
+  }
+  const accountId = original.accountId;
+  return {
+    transactionId: reversalRows[0]?.reversalId,
+    balanceMinor: await getBalanceForAccount(accountId, userId, transaction),
+    currencyCode: original.currencyCode,
+    duplicate: false,
+  };
 }
 
 export async function archiveSavingsAccount(userId: string, accountId: string, database = getDatabase()) {

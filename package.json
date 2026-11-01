@@ -15,8 +15,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.106",
     "@better-auth/drizzle-adapter": "^1.7.14",
     "@neondatabase/serverless": "^1.2.0",
+    "ai": "^7.0.159",
     "better-auth": "^1.7.14",
     "date-fns": "^4.4.0",
     "drizzle-orm": "^0.45.4",

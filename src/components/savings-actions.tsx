@@ -24,15 +24,38 @@ import type { CurrencyCode, SavingsAccountRecord, SavingsGoalRecord } from "@/ty
 
 type SavingsAction = (previous: SavingsActionState, formData: FormData) => Promise<SavingsActionState>;
 
-function SavingsActionDialog({ label, children }: { label: string; children: ReactNode }) {
+export function SavingsActionDialog({
+  label,
+  children,
+  trigger,
+  open,
+  onClose,
+}: {
+  label: string;
+  children: ReactNode;
+  trigger?: ReactNode;
+  open?: boolean;
+  onClose?: () => void;
+}) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isOpen = open ?? internalOpen;
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (isOpen && !dialog.open) dialog.showModal();
+    if (!isOpen && dialog.open) dialog.close();
+  }, [isOpen]);
 
   return (
     <div className="savings-action">
-      <button aria-haspopup="dialog" className="savings-action-trigger" onClick={() => dialogRef.current?.showModal()} type="button">
-        {label}
-      </button>
+      {trigger ?? (
+        <button aria-haspopup="dialog" className="savings-action-trigger" onClick={() => setInternalOpen(true)} type="button">
+          {label}
+        </button>
+      )}
       <dialog
         aria-labelledby={titleId}
         className="savings-action-dialog"
@@ -41,6 +64,10 @@ function SavingsActionDialog({ label, children }: { label: string; children: Rea
             event.preventDefault();
             dialogRef.current?.close();
           }
+        }}
+        onClose={() => {
+          setInternalOpen(false);
+          onClose?.();
         }}
         ref={dialogRef}
       >
@@ -259,6 +286,54 @@ function AccountFields({
   );
 }
 
+function SavingsGoalManager({ goals, accounts }: { goals: SavingsGoalRecord[]; accounts: SavingsAccountRecord[] }) {
+  const [selectedGoalId, setSelectedGoalId] = useState("");
+  const selectedGoal = goals.find((goal) => goal.id === selectedGoalId);
+
+  return (
+    <SavingsActionDialog
+      label={selectedGoal ? `Manage ${selectedGoal.name}` : "Manage goal"}
+      open={Boolean(selectedGoal)}
+      onClose={() => setSelectedGoalId("")}
+      trigger={(
+        <label className="savings-goal-selector">
+          <span className="visually-hidden">Select a savings goal to manage</span>
+          <select
+            onChange={(event) => {
+              setSelectedGoalId(event.target.value);
+            }}
+            value={selectedGoalId}
+          >
+            <option value="">Manage goal</option>
+            {goals.map((goal) => <option key={goal.id} value={goal.id}>{goal.name}</option>)}
+          </select>
+        </label>
+      )}
+    >
+      {selectedGoal ? (
+        <div key={selectedGoal.id} className="savings-goal-manager-content">
+          <ActionForm action={updateSavingsGoalAction} label="Save goal">
+            <input name="goalId" type="hidden" value={selectedGoal.id} />
+            <Field label="Goal name"><input defaultValue={selectedGoal.name} maxLength={100} name="name" required /></Field>
+            <Field label="Linked account (optional)"><select defaultValue={selectedGoal.accountId ?? ""} name="accountId"><option value="">No linked account</option>{accounts.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.currencyCode}</option>)}</select></Field>
+            <Field label="Target amount"><input defaultValue={selectedGoal.targetAmountMinor / (selectedGoal.currencyCode === "JPY" ? 1 : 100)} inputMode="decimal" min="0.01" name="targetAmount" required step="0.01" type="number" /></Field>
+            <Field label="Target date (optional)"><input defaultValue={selectedGoal.targetDate?.toISOString().slice(0, 10) ?? ""} name="targetDate" type="date" /></Field>
+            <Field label="Notes (optional)"><textarea defaultValue={selectedGoal.notes ?? ""} maxLength={1000} name="notes" rows={2} /></Field>
+          </ActionForm>
+          <div className="savings-goal-status-actions">
+            <ActionForm action={completeSavingsGoalAction} buttonVariant="secondary" className="savings-goal-status-form" label="Mark complete">
+              <input name="goalId" type="hidden" value={selectedGoal.id} />
+            </ActionForm>
+            <ActionForm action={archiveSavingsGoalAction} buttonVariant="secondary" className="savings-goal-status-form savings-goal-archive-form" label="Archive goal">
+              <input name="goalId" type="hidden" value={selectedGoal.id} />
+            </ActionForm>
+          </div>
+        </div>
+      ) : null}
+    </SavingsActionDialog>
+  );
+}
+
 export function SavingsActions({
   accounts,
   defaultCurrency = "PHP",
@@ -352,26 +427,7 @@ export function SavingsActions({
           </ActionForm>
         </SavingsActionDialog>
       ) : null}
-      {goals.map((goal) => (
-        <SavingsActionDialog key={goal.id} label={`Manage ${goal.name}`}>
-          <ActionForm action={updateSavingsGoalAction} label="Save goal">
-            <input name="goalId" type="hidden" value={goal.id} />
-            <Field label="Goal name"><input defaultValue={goal.name} maxLength={100} name="name" required /></Field>
-            <Field label="Linked account (optional)"><select defaultValue={goal.accountId ?? ""} name="accountId"><option value="">No linked account</option>{activeAccounts.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.currencyCode}</option>)}</select></Field>
-            <Field label="Target amount"><input defaultValue={goal.targetAmountMinor / (goal.currencyCode === "JPY" ? 1 : 100)} inputMode="decimal" min="0.01" name="targetAmount" required step="0.01" type="number" /></Field>
-            <Field label="Target date (optional)"><input defaultValue={goal.targetDate?.toISOString().slice(0, 10) ?? ""} name="targetDate" type="date" /></Field>
-            <Field label="Notes (optional)"><textarea defaultValue={goal.notes ?? ""} maxLength={1000} name="notes" rows={2} /></Field>
-          </ActionForm>
-          <div className="savings-goal-status-actions">
-            <ActionForm action={completeSavingsGoalAction} buttonVariant="secondary" className="savings-goal-status-form" label="Mark complete">
-              <input name="goalId" type="hidden" value={goal.id} />
-            </ActionForm>
-            <ActionForm action={archiveSavingsGoalAction} buttonVariant="secondary" className="savings-goal-status-form savings-goal-archive-form" label="Archive goal">
-              <input name="goalId" type="hidden" value={goal.id} />
-            </ActionForm>
-          </div>
-        </SavingsActionDialog>
-      ))}
+      {goals.length > 0 ? <SavingsGoalManager accounts={activeAccounts} goals={goals} /> : null}
     </div>
   );
 }

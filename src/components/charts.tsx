@@ -28,17 +28,21 @@ export interface TrendDatum {
   [key: string]: string | number;
 }
 
-export function SpendingDonutChart({ data }: { data: ChartDatum[] }) {
+export function SpendingDonutChart({ data, currencyCode = "PHP" }: { data: ChartDatum[]; currencyCode?: CurrencyCode }) {
   const visibleData = data.filter((item) => item.value > 0);
 
   if (visibleData.length === 0) {
     return <div className="chart-empty">No spending to show yet.</div>;
   }
 
+  const totalMinor = visibleData.reduce((total, item) => total + item.value, 0);
+  const accessibleSummary = visibleData
+    .map((item) => `${item.name}: ${formatMoney(item.value, currencyCode)}`)
+    .join(". ");
   return (
     <div className="donut-chart-layout">
       <div
-        aria-label={`Spending by category: ${visibleData.map((item) => `${item.name}, ${formatMoney(item.value)}`).join("; ")}`}
+        aria-label={`Spending by category. ${accessibleSummary}. Total: ${formatMoney(totalMinor, currencyCode)}.`}
         className="donut-chart-visual"
         role="img"
       >
@@ -54,12 +58,12 @@ export function SpendingDonutChart({ data }: { data: ChartDatum[] }) {
             >
               {visibleData.map((entry) => <Cell fill={entry.color} key={entry.name} />)}
             </Pie>
-            <Tooltip formatter={(value) => formatMoney(Number(value))} />
+            <Tooltip formatter={(value) => formatMoney(Number(value), currencyCode)} />
           </PieChart>
         </ResponsiveContainer>
         <div aria-hidden="true" className="donut-center">
           <span>Spent</span>
-          <strong>{formatMoney(visibleData.reduce((total, item) => total + item.value, 0))}</strong>
+          <strong>{formatMoney(totalMinor, currencyCode)}</strong>
         </div>
       </div>
       <ul className="chart-legend">
@@ -67,7 +71,7 @@ export function SpendingDonutChart({ data }: { data: ChartDatum[] }) {
           <li key={item.name}>
             <span aria-hidden="true" className="legend-dot" style={{ backgroundColor: item.color }} />
             <span>{item.name}</span>
-            <strong>{formatMoney(item.value)}</strong>
+            <strong>{formatMoney(item.value, currencyCode)}</strong>
           </li>
         ))}
       </ul>
@@ -86,8 +90,11 @@ export function TrendLineChart({
 }) {
   if (data.length === 0) return <div className="chart-empty">Not enough history to show a trend.</div>;
 
+  const accessibleSummary = data
+    .map((point) => `${point.month}: ${series.map((item) => `${item.label} ${formatMoney(Number(point[item.key] ?? 0), currencyCode)}`).join(", ")}`)
+    .join(". ");
   return (
-    <div aria-label={`Trend chart for ${series.map((item) => item.label).join(" and ")}`} className="trend-chart" role="img">
+    <div aria-label={`Trend chart. ${accessibleSummary}`} className="trend-chart" role="img">
       <ResponsiveContainer height={250} width="100%">
         <LineChart data={data} margin={{ top: 8, right: 4, left: -20, bottom: 0 }}>
           <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />
@@ -126,8 +133,11 @@ export function ComparisonBarChart({
 }) {
   if (data.length === 0) return <div className="chart-empty">No monthly comparison to show.</div>;
 
+  const accessibleSummary = data
+    .map((point) => `${point.month}: ${series.map((item) => `${item.label} ${formatMoney(Number(point[item.key] ?? 0), currencyCode)}`).join(", ")}`)
+    .join(". ");
   return (
-    <div aria-label={`Monthly comparison chart for ${series.map((item) => item.label).join(" and ")}`} className="trend-chart" role="img">
+    <div aria-label={`Comparison chart. ${accessibleSummary}`} className="trend-chart" role="img">
       <ResponsiveContainer height={250} width="100%">
         <BarChart data={data} margin={{ top: 8, right: 4, left: -20, bottom: 0 }}>
           <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" vertical={false} />

@@ -1,0 +1,1 @@
+ALTER TABLE "budget_expense_transactions" ADD CONSTRAINT "budget_expenses_travel_source_link_check" CHECK (("budget_expense_transactions"."source_type"::text = 'travel' AND "budget_expense_transactions"."linked_travel_expense_id" IS NOT NULL) OR ("budget_expense_transactions"."source_type"::text <> 'travel' AND "budget_expense_transactions"."linked_travel_expense_id" IS NULL));
