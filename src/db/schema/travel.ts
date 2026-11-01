@@ -242,11 +242,13 @@ export const travelItineraryItems = pgTable(
     notes: text("notes"),
     sortOrder: integer("sort_order").notNull().default(0),
     status: travelItineraryStatus("status").notNull().default("planned"),
+    idempotencyKey: text("idempotency_key"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("travel_itinerary_items_id_user_unique").on(table.id, table.userId),
+    uniqueIndex("travel_itinerary_items_user_idempotency_unique").on(table.userId, table.idempotencyKey),
     foreignKey({
       name: "travel_itinerary_items_trip_user_fk",
       columns: [table.tripId, table.userId],
@@ -271,12 +273,14 @@ export const travelTodos = pgTable(
     priority: travelTodoPriority("priority").notNull().default("normal"),
     status: travelTodoStatus("status").notNull().default("pending"),
     sortOrder: integer("sort_order").notNull().default(0),
+    idempotencyKey: text("idempotency_key"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
   },
   (table) => [
     uniqueIndex("travel_todos_id_user_unique").on(table.id, table.userId),
+    uniqueIndex("travel_todos_user_idempotency_unique").on(table.userId, table.idempotencyKey),
     foreignKey({
       name: "travel_todos_trip_user_fk",
       columns: [table.tripId, table.userId],

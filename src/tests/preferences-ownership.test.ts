@@ -48,6 +48,7 @@ describe("preference ownership", () => {
       timezone: "UTC",
       theme: "dark",
       firstDayOfWeek: "sunday",
+      aiActionsEnabled: true,
     }, true, database);
 
     const userAPreferences = await getPreferencesForUser("user-a", database);

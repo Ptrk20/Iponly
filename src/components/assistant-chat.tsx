@@ -4,34 +4,81 @@ import { Bot, CircleHelp, LoaderCircle, Send, Sparkles, Square, Trash2 } from "l
 import Link from "next/link";
 import { useRef, useState, type FormEvent } from "react";
 import { getSafeIponlyRouteByPath } from "@/lib/ai/safety";
+import { AssistantMessageText } from "@/components/assistant-message-text";
+import { aiActionDisplayPayloadSchema, type AIActionType } from "@/lib/validations/ai-actions";
+import type { AIActionProposalStatus } from "@/types/ai-actions";
 
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   route?: { href: string; label: string };
+  proposal?: ChatProposal;
+  actionResult?: { message: string; route?: { href: string; label: string } };
+  actionNotice?: string;
+}
+
+interface ChatProposal {
+  id: string;
+  actionType: AIActionType;
+  status: AIActionProposalStatus;
+  display: ReturnType<typeof aiActionDisplayPayloadSchema.parse>;
+  expiresAt: string;
 }
 
 interface StructuredReply {
-  type: "read-only" | "boundary";
+  type: "read-only" | "boundary" | "action";
   reply: string;
-  route: { href: string; label: string };
+  route?: { href: string; label: string };
+  proposal?: ChatProposal | null;
 }
 
 function parseStructuredReply(value: unknown): StructuredReply | null {
   if (
     typeof value !== "object" || value === null ||
-    !("type" in value) || (value.type !== "read-only" && value.type !== "boundary") ||
-    !("reply" in value) || typeof value.reply !== "string" ||
-    !("route" in value) || typeof value.route !== "object" || value.route === null ||
-    !("href" in value.route) || typeof value.route.href !== "string" ||
-    !("label" in value.route) || typeof value.route.label !== "string"
+    !("type" in value) || (value.type !== "read-only" && value.type !== "boundary" && value.type !== "action") ||
+    !("reply" in value) || typeof value.reply !== "string"
   ) return null;
 
+  const route = "route" in value && typeof value.route === "object" && value.route !== null &&
+    "href" in value.route && typeof value.route.href === "string" &&
+    "label" in value.route && typeof value.route.label === "string"
+    ? { href: value.route.href, label: value.route.label }
+    : undefined;
+  if ((value.type === "read-only" || value.type === "boundary") && !route) return null;
+  let proposal: ChatProposal | null | undefined;
+  if (value.type === "action") {
+    if (!("proposal" in value) || value.proposal === null) {
+      proposal = null;
+    } else if (typeof value.proposal === "object" && value.proposal !== null &&
+      "id" in value.proposal && typeof value.proposal.id === "string" && /^[0-9a-f-]{36}$/i.test(value.proposal.id) &&
+      "actionType" in value.proposal && typeof value.proposal.actionType === "string" &&
+      "status" in value.proposal && typeof value.proposal.status === "string" &&
+      "display" in value.proposal && "expiresAt" in value.proposal && typeof value.proposal.expiresAt === "string") {
+      const actionTypes: AIActionType[] = [
+        "savings_deposit", "savings_withdrawal", "account_transfer", "budget_expense",
+        "budget_income", "debt_payment", "travel_expense", "travel_todo", "itinerary_item",
+      ];
+      const statuses: AIActionProposalStatus[] = ["pending_confirmation", "confirmed", "executing", "completed", "cancelled", "expired", "failed", "superseded"];
+      const display = aiActionDisplayPayloadSchema.safeParse(value.proposal.display);
+      if (!actionTypes.includes(value.proposal.actionType as AIActionType) ||
+        !statuses.includes(value.proposal.status as AIActionProposalStatus) ||
+        !display.success) return null;
+      proposal = {
+        id: value.proposal.id,
+        actionType: value.proposal.actionType as AIActionType,
+        status: value.proposal.status as AIActionProposalStatus,
+        display: display.data,
+        expiresAt: value.proposal.expiresAt,
+      };
+    } else return null;
+  }
+
   return {
-    type: value.type,
+    type: value.type as StructuredReply["type"],
     reply: value.reply,
-    route: { href: value.route.href, label: value.route.label },
+    ...(route ? { route } : {}),
+    ...(value.type === "action" ? { proposal } : {}),
   };
 }
 
@@ -63,7 +110,10 @@ export function AssistantChat({ providerAvailable }: { providerAvailable: boolea
   const [isStreaming, setIsStreaming] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [announcement, setAnnouncement] = useState("");
+  const [actingProposalId, setActingProposalId] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  const composerRef = useRef<HTMLInputElement | null>(null);
+  const proposalToFocusRef = useRef<string | null>(null);
   const responseTextRef = useRef("");
   const activeRequestIdRef = useRef<string | null>(null);
 
@@ -113,9 +163,17 @@ export function AssistantChat({ providerAvailable }: { providerAvailable: boolea
         const body = parseStructuredReply(await response.json());
         if (!body) throw new Error("I couldn't read the response. Please try again.");
         const route = safeRoute(body.route);
+        if (body.proposal?.status === "pending_confirmation") {
+          proposalToFocusRef.current = body.proposal.id;
+        }
         setMessages((current) => current.map((message) =>
           message.id === assistantId
-            ? { ...message, content: body.reply, ...(route ? { route } : {}) }
+            ? {
+                ...message,
+                content: body.reply,
+                ...(route ? { route } : {}),
+                ...(body.proposal ? { proposal: body.proposal } : {}),
+              }
             : message,
         ));
         setAnnouncement("Iponly AI finished replying.");
@@ -179,6 +237,68 @@ export function AssistantChat({ providerAvailable }: { providerAvailable: boolea
     setIsStreaming(false);
   }
 
+  async function respondToProposal(messageId: string, proposal: ChatProposal, action: "confirm" | "cancel"): Promise<boolean> {
+    if (actingProposalId) return false;
+    setActingProposalId(proposal.id);
+    setErrorMessage("");
+    try {
+      const response = await fetch("/api/ai-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, proposalId: proposal.id }),
+      });
+      const body: unknown = await response.json().catch(() => null);
+      const message = typeof body === "object" && body !== null && "message" in body && typeof body.message === "string"
+        ? body.message
+        : typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
+          ? body.error
+          : "I couldn’t process this proposal. Please try again.";
+      if (!response.ok) {
+        setMessages((current) => current.map((item) =>
+          item.id === messageId ? { ...item, actionNotice: message } : item,
+        ));
+        return false;
+      }
+
+      const nextStatus: AIActionProposalStatus = action === "confirm" ? "completed" : "cancelled";
+      const href = typeof body === "object" && body !== null && "href" in body && typeof body.href === "string"
+        ? safeRoute({ href: body.href, label: "Open related Iponly page" })
+        : undefined;
+      setMessages((current) => current.map((item) =>
+        item.id === messageId
+          ? {
+              ...item,
+              proposal: { ...proposal, status: nextStatus },
+              actionResult: { message, ...(href ? { route: href } : {}) },
+              actionNotice: undefined,
+            }
+          : item,
+      ));
+      setAnnouncement(action === "confirm" ? "AI action completed." : "Proposal cancelled. No changes were made.");
+      return true;
+    } catch {
+      setMessages((current) => current.map((item) =>
+        item.id === messageId ? { ...item, actionNotice: "I couldn’t reach Iponly to process this proposal. Check the relevant page before retrying." } : item,
+      ));
+      return false;
+    } finally {
+      setActingProposalId(null);
+    }
+  }
+
+  async function editProposal(messageId: string, proposal: ChatProposal) {
+    const messageIndex = messages.findIndex((message) => message.id === messageId);
+    if (messageIndex <= 0) return;
+    const originalRequest = messages.slice(0, messageIndex).reverse()
+      .find((message) => message.role === "user")?.content;
+    if (!originalRequest) return;
+    if (await respondToProposal(messageId, proposal, "cancel")) {
+      setInput(originalRequest);
+      setAnnouncement("Proposal cancelled. Edit the request, then send it for a new proposal.");
+      composerRef.current?.focus();
+    }
+  }
+
   return (
     <div className="page-stack assistant-page">
       <header className="page-header">
@@ -187,10 +307,13 @@ export function AssistantChat({ providerAvailable }: { providerAvailable: boolea
           <h1>Iponly AI</h1>
           <p className="page-description">Ask questions about your own Iponly records.</p>
         </div>
-        <button className="button button-secondary assistant-clear" onClick={clearConversation} type="button">
-          <Trash2 aria-hidden="true" size={16} />
-          Clear conversation
-        </button>
+        <div className="page-header-actions">
+          <button className="button button-secondary assistant-clear" onClick={clearConversation} type="button">
+            <Trash2 aria-hidden="true" size={16} />
+            Clear conversation
+          </button>
+          <Link className="button button-secondary" href="/assistant/history">Action history</Link>
+        </div>
       </header>
 
       <section aria-label="Iponly AI conversation" className="panel assistant-panel">
@@ -202,9 +325,69 @@ export function AssistantChat({ providerAvailable }: { providerAvailable: boolea
               ) : null}
               <div className="assistant-message-body">
                 <strong>{message.role === "assistant" ? "Iponly AI" : "You"}</strong>
-                <p>{message.content || (isStreaming ? " " : "")}</p>
+                <p>{message.role === "assistant"
+                  ? <AssistantMessageText content={message.content || (isStreaming ? " " : "")} />
+                  : message.content}</p>
                 {message.route ? (
                   <Link className="assistant-route-link" href={message.route.href}>{message.route.label}</Link>
+                ) : null}
+                {message.proposal ? (
+                  <section
+                    aria-labelledby={`proposal-${message.proposal.id}`}
+                    className="assistant-action-card"
+                    id={`proposal-card-${message.proposal.id}`}
+                    ref={(element) => {
+                      if (element && proposalToFocusRef.current === message.proposal!.id) {
+                        element.focus();
+                        proposalToFocusRef.current = null;
+                      }
+                    }}
+                    tabIndex={-1}
+                  >
+                    <h2 id={`proposal-${message.proposal.id}`}>{message.proposal.display.title}</h2>
+                    <p>{message.proposal.display.summary}</p>
+                    <dl>
+                      {message.proposal.display.details.map((detail) => (
+                        <div key={`${detail.label}-${detail.value}`}>
+                          <dt>{detail.label}</dt><dd>{detail.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {message.proposal.display.warning ? <p className="assistant-action-warning">{message.proposal.display.warning}</p> : null}
+                    <p className="assistant-action-expiry">
+                      Expires {new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(message.proposal.expiresAt))}
+                    </p>
+                    {message.actionResult ? (
+                      <p aria-live="polite" className="assistant-action-result" role="status">{message.actionResult.message}</p>
+                    ) : null}
+                    {message.actionNotice ? <p className="assistant-error" role="alert">{message.actionNotice}</p> : null}
+                    {message.proposal.status === "pending_confirmation" ? (
+                      <div className="assistant-action-buttons">
+                        <button
+                          className="button button-secondary"
+                          disabled={actingProposalId === message.proposal.id}
+                          onClick={() => void editProposal(message.id, message.proposal!)}
+                          type="button"
+                        >Edit details</button>
+                        <button
+                          className="button button-secondary"
+                          disabled={actingProposalId === message.proposal.id}
+                          onClick={() => void respondToProposal(message.id, message.proposal!, "cancel")}
+                          type="button"
+                        >Cancel</button>
+                        <button
+                          aria-label={message.proposal.display.confirmLabel}
+                          className="button button-primary"
+                          disabled={actingProposalId === message.proposal.id}
+                          onClick={() => void respondToProposal(message.id, message.proposal!, "confirm")}
+                          type="button"
+                        >{actingProposalId === message.proposal.id ? "Processing…" : message.proposal.display.confirmLabel}</button>
+                      </div>
+                    ) : null}
+                    {message.actionResult?.route ? (
+                      <Link className="assistant-route-link" href={message.actionResult.route.href}>{message.actionResult.route.label}</Link>
+                    ) : null}
+                  </section>
                 ) : null}
               </div>
             </article>
@@ -244,6 +427,7 @@ export function AssistantChat({ providerAvailable }: { providerAvailable: boolea
             maxLength={4_000}
             onChange={(event) => setInput(event.target.value)}
             placeholder="Ask about your savings, budget, debt, or trips…"
+            ref={composerRef}
             value={input}
           />
           {isStreaming ? (
@@ -258,7 +442,7 @@ export function AssistantChat({ providerAvailable }: { providerAvailable: boolea
         </form>
 
         <p className="assistant-privacy">
-          Your message and the financial information needed to answer it may be processed by the configured AI provider. Iponly AI is read-only and does not provide professional financial advice.
+          Your message and only the information needed to prepare an action may be processed by the configured AI provider. Any proposed change requires your confirmation in Iponly; Iponly AI does not provide professional financial advice.
         </p>
         <p aria-atomic="true" aria-live="polite" className="sr-only">{announcement}</p>
       </section>

@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { PrototypeAction } from "@/components/prototype-action";
 import { LogoutButton } from "@/components/logout-button";
 
 const primaryNavigation: { href: string; label: string; icon: LucideIcon }[] = [
@@ -29,7 +28,9 @@ const primaryNavigation: { href: string; label: string; icon: LucideIcon }[] = [
 
 const secondaryNavigation: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/analytics", label: "Analytics", icon: ChartNoAxesCombined },
-  { href: "/assistant", label: "Iponly AI", icon: Sparkles },
+  ...(process.env.NODE_ENV !== "production"
+    ? [{ href: "/assistant", label: "Iponly AI", icon: Sparkles }]
+    : []),
   { href: "/settings", label: "Settings", icon: Settings2 },
 ];
 
@@ -109,20 +110,22 @@ export function AppShell({
             <strong>Iponly</strong>
           </Link>
           <div className="topbar-spacer" />
-          <span className="demo-chip"><span aria-hidden="true" />Demo preview</span>
-          <Link aria-label="Ask Iponly AI" className="assistant-quick-link" href="/assistant">
-            <Sparkles aria-hidden="true" size={17} />
-            <span>Ask AI</span>
-          </Link>
-          <PrototypeAction icon="bell" iconOnly label="Notifications" variant="quiet" />
+          {process.env.NODE_ENV !== "production" ? (
+            <Link aria-label="Ask Iponly AI" className="assistant-quick-link" href="/assistant">
+              <Sparkles aria-hidden="true" size={17} />
+              <span>Ask AI</span>
+            </Link>
+          ) : null}
           <Link aria-label={`Settings for ${profile.name}`} className="topbar-profile" href="/settings">
             <span aria-hidden="true" className="profile-avatar">{initials}</span>
           </Link>
           <LogoutButton iconOnly />
         </header>
 
-        <div className="demo-disclaimer" role="note">Savings, debt, and monthly budgets use your saved records. Travel planning is still a preview.</div>
         <main className="main-content" id="main-content">{children}</main>
+        <footer className="site-footer app-site-footer">
+          <span>All Rights Reserved 2026 | Developed by PNase</span>
+        </footer>
       </div>
 
       <nav aria-label="Primary navigation" className="bottom-navigation">

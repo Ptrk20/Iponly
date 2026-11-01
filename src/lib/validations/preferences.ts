@@ -16,6 +16,7 @@ export const preferencesInputSchema = z.object({
   timezone: timezoneSchema,
   theme: z.enum(["light", "dark", "system"]),
   firstDayOfWeek: z.enum(["monday", "sunday"]),
+  aiActionsEnabled: z.boolean().default(false),
 });
 
 export type PreferencesInput = z.infer<typeof preferencesInputSchema>;

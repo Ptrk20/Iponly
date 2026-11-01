@@ -56,6 +56,7 @@ import {
   findBudgetExpenseForTravelExpense,
   findBookingsForTrip,
   findItineraryForTrip,
+  findItineraryItemByIdempotencyKey,
   findItineraryItemForUser,
   findPackingItemsForTrip,
   findPlannedTravelExpenseForUser,
@@ -63,6 +64,7 @@ import {
   findSavingsGoalForUser,
   findTodosForTrip,
   findTodoForUser,
+  findTodoByIdempotencyKey,
   findTripByCreationKey,
   findTripForUser,
   findTripsForUser,
@@ -476,10 +478,20 @@ export async function reverseTravelExpense(
 export async function createItineraryItem(actorId: string, input: {
   tripId: string; date: string; startTime?: string; endTime?: string; title: string; location?: string;
   category: "flight" | "accommodation" | "transport" | "food" | "activity" | "sightseeing" | "shopping" | "free_time" | "other";
-  description?: string; confirmationReference?: string; link?: string; notes?: string; sortOrder: number;
+  description?: string; confirmationReference?: string; link?: string; notes?: string; sortOrder: number; idempotencyKey?: string;
 }, database: IponlyDatabase = getDatabase()) {
   const userId = await resolveEditorOwner(actorId, input.tripId, database);
   await findEditableTrip(userId, input.tripId, database);
+  if (input.idempotencyKey) {
+    const existing = await findItineraryItemByIdempotencyKey(userId, input.idempotencyKey, database);
+    if (existing) {
+      if (existing.tripId !== input.tripId || existing.date !== input.date || existing.title !== input.title ||
+          existing.startTime !== (input.startTime || null) || existing.endTime !== (input.endTime || null)) {
+        throw new TravelRuleError("This itinerary submission key was already used for different details.");
+      }
+      return existing;
+    }
+  }
   return createItineraryItemForUser(userId, {
     tripId: input.tripId,
     date: input.date,
@@ -494,6 +506,7 @@ export async function createItineraryItem(actorId: string, input: {
     notes: input.notes || null,
     sortOrder: input.sortOrder,
     status: "planned",
+    idempotencyKey: input.idempotencyKey || null,
   }, database);
 }
 
@@ -526,13 +539,23 @@ export async function deleteItineraryItem(actorId: string, itemId: string, datab
 }
 
 export async function createTravelTodo(actorId: string, input: {
-  tripId: string; title: string; description?: string; dueDate?: string; priority: "low" | "normal" | "high";
+  tripId: string; title: string; description?: string; dueDate?: string; priority: "low" | "normal" | "high"; idempotencyKey?: string;
 }, database: IponlyDatabase = getDatabase()) {
   const userId = await resolveEditorOwner(actorId, input.tripId, database);
   await findEditableTrip(userId, input.tripId, database);
+  if (input.idempotencyKey) {
+    const existing = await findTodoByIdempotencyKey(userId, input.idempotencyKey, database);
+    if (existing) {
+      if (existing.tripId !== input.tripId || existing.title !== input.title ||
+          existing.description !== (input.description || null) || existing.dueDate !== (input.dueDate || null)) {
+        throw new TravelRuleError("This travel task submission key was already used for different details.");
+      }
+      return existing;
+    }
+  }
   return createTodoForUser(userId, {
     tripId: input.tripId, title: input.title, description: input.description || null, dueDate: input.dueDate || null,
-    priority: input.priority, status: "pending", sortOrder: 0, completedAt: null,
+    priority: input.priority, status: "pending", sortOrder: 0, completedAt: null, idempotencyKey: input.idempotencyKey || null,
   }, database);
 }
 

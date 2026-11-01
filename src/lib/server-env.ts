@@ -9,6 +9,19 @@ const serverEnvSchema = z.object({
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z.string().url(),
   NEXT_PUBLIC_APP_URL: z.string().url(),
+  VAPID_PUBLIC_KEY: z.union([z.string().min(1), z.literal("")]).optional(),
+  VAPID_PRIVATE_KEY: z.union([z.string().min(1), z.literal("")]).optional(),
+  VAPID_SUBJECT: z.union([z.string().url(), z.string().startsWith("mailto:"), z.literal("")]).optional(),
+  NOTIFICATION_CRON_SECRET: z.union([z.string().min(32), z.literal("")]).optional(),
+}).superRefine((env, context) => {
+  const vapidValues = [env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY, env.VAPID_SUBJECT];
+  if (vapidValues.some(Boolean) && !vapidValues.every(Boolean)) {
+    context.addIssue({
+      code: "custom",
+      message: "VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT must be set together.",
+      path: ["VAPID_PUBLIC_KEY"],
+    });
+  }
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;

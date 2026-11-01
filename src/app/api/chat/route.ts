@@ -1,5 +1,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { APICallError, createGateway, stepCountIs, streamText } from "ai";
+import { APICallError, createGateway, generateText, stepCountIs, streamText } from "ai";
+import { createActionPreparationTools } from "@/ai/action-tools";
+import { iponlyAIActionSystemGuidance } from "@/ai/action-system-guidance";
 import { createReadOnlyTools } from "@/ai/tools";
 import { iponlyAISystemGuidance } from "@/ai/system-guidance";
 import { getAIConfiguration } from "@/lib/ai/config";
@@ -13,6 +15,7 @@ import {
 } from "@/lib/ai/safety";
 import { getCurrentUser } from "@/lib/auth-session";
 import { getUserPreferences } from "@/services/preferences-service";
+import type { AIActionProposalDTO } from "@/services/ai-action-service";
 
 export const maxDuration = 30;
 const maximumRequestBytes = 50_000;
@@ -105,6 +108,10 @@ function isAllowedOrigin(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
+
   try {
     const user = await getCurrentUser();
     if (!user) return jsonError("Please sign in to use Iponly AI.", 401);
@@ -131,11 +138,13 @@ export async function POST(request: Request) {
     if (!parsedRequest.success) return jsonError("This message is too long or the conversation is invalid.", 400);
 
     const latestMessage = parsedRequest.data.messages.at(-1)!.content;
-    if (isWriteRequest(latestMessage)) {
+    const isWrite = isWriteRequest(latestMessage);
+    const preferences = isWrite ? await getUserPreferences(user.id) : null;
+    if (isWrite && !preferences?.aiActionsEnabled) {
       const route = getSafeIponlyRoute(routeForWriteRequest(latestMessage));
       return Response.json({
         type: "read-only",
-        reply: `I can view and explain your financial information, but I can't make changes yet. Open ${route.label} to record this yourself.`,
+        reply: `I can view and explain your financial information, but I can't make changes while AI Actions are disabled. Open ${route.label} to record this yourself.`,
         route,
       });
     }
@@ -150,18 +159,59 @@ export async function POST(request: Request) {
     const configuration = getAIConfiguration();
     if (!configuration) return jsonError("Iponly AI is not configured right now. You can continue using the rest of Iponly.", 503);
 
-    const preferences = await getUserPreferences(user.id);
+    const userPreferences = preferences ?? await getUserPreferences(user.id);
     const model = configuration.provider === "vercel"
       ? createGateway({ apiKey: configuration.apiKey })(configuration.model)
       : createOpenAI({ apiKey: configuration.apiKey, baseURL: configuration.baseURL }).chat(configuration.model);
+
+    if (isWrite) {
+      let preparedProposal: AIActionProposalDTO | null = null;
+      try {
+        const result = await generateText({
+          model,
+          system: iponlyAIActionSystemGuidance,
+          messages: [{ role: "user", content: latestMessage }],
+          tools: createActionPreparationTools({
+            userId: user.id,
+            timezone: userPreferences.timezone,
+            defaultCurrencyCode: userPreferences.defaultCurrencyCode,
+            originalMessage: latestMessage,
+            onPrepared: (proposal) => { preparedProposal = proposal; },
+          }),
+          stopWhen: stepCountIs(2),
+          maxOutputTokens: 350,
+          abortSignal: request.signal,
+        });
+        return Response.json({
+          type: "action",
+          reply: result.text || (preparedProposal ? "I prepared this action for your review. Nothing has changed yet." : "I need a little more detail before I can prepare that action."),
+          proposal: preparedProposal,
+        }, { headers: { "Cache-Control": "no-store" } });
+      } catch (error) {
+        console.error("Iponly AI action preparation failed.", {
+          category: "provider-preparation",
+          provider: configuration.provider,
+          ...providerErrorDetails(error),
+        });
+        if (preparedProposal) {
+          return Response.json({
+            type: "action",
+            reply: "I prepared this action for your review. Nothing has changed yet.",
+            proposal: preparedProposal,
+          }, { headers: { "Cache-Control": "no-store" } });
+        }
+        return jsonError(providerErrorMessage(error), 502);
+      }
+    }
+
     const result = streamText({
       model,
       system: iponlyAISystemGuidance,
       messages: parsedRequest.data.messages.map(({ role, content }) => ({ role, content })),
       tools: createReadOnlyTools({
         userId: user.id,
-        timezone: preferences.timezone,
-        defaultCurrencyCode: preferences.defaultCurrencyCode,
+        timezone: userPreferences.timezone,
+        defaultCurrencyCode: userPreferences.defaultCurrencyCode,
       }),
       stopWhen: stepCountIs(5),
       maxOutputTokens: 700,

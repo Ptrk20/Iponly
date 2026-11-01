@@ -89,8 +89,48 @@ export const userPreferences = pgTable(
     theme: themePreference("theme").notNull().default("system"),
     firstDayOfWeek: firstDayOfWeekPreference("first_day_of_week").notNull().default("monday"),
     onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
+    aiActionsEnabled: boolean("ai_actions_enabled").notNull().default(false),
+    debtRemindersEnabled: boolean("debt_reminders_enabled").notNull().default(true),
+    tripRemindersEnabled: boolean("trip_reminders_enabled").notNull().default(true),
+    todoRemindersEnabled: boolean("todo_reminders_enabled").notNull().default(true),
+    monthlyAnalyticsEnabled: boolean("monthly_analytics_enabled").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("user_preferences_user_id_unique").on(table.userId)],
+);
+
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("push_subscriptions_endpoint_unique").on(table.endpoint),
+    index("push_subscriptions_user_idx").on(table.userId),
+  ],
+);
+
+export const notificationDeliveryStatus = pgEnum("notification_delivery_status", ["pending", "sent"]);
+
+export const notificationDeliveries = pgTable(
+  "notification_deliveries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    subscriptionId: uuid("subscription_id").notNull().references(() => pushSubscriptions.id, { onDelete: "cascade" }),
+    notificationKey: text("notification_key").notNull(),
+    status: notificationDeliveryStatus("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    uniqueIndex("notification_deliveries_subscription_key_unique").on(table.subscriptionId, table.notificationKey),
+    index("notification_deliveries_pending_created_idx").on(table.status, table.createdAt),
+  ],
 );

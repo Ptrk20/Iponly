@@ -5,6 +5,7 @@ import { nextCookies } from "better-auth/next-js";
 import { getDatabase } from "@/db";
 import type { IponlyDatabase } from "@/db";
 import { account, session, user, verification } from "@/db/schema";
+import { deleteUserFinancialData } from "@/repositories/account-deletion-repository";
 import { initializeUserPreferences } from "@/services/preferences-service";
 import { getServerEnv, type ServerEnv } from "@/lib/server-env";
 
@@ -27,6 +28,14 @@ export function createAuth(
         minPasswordLength: 10,
         maxPasswordLength: 128,
         autoSignIn: true,
+      },
+      user: {
+        deleteUser: {
+          enabled: true,
+          beforeDelete: async (deletedUser) => {
+            await deleteUserFinancialData(deletedUser.id, database);
+          },
+        },
       },
       session: {
         expiresIn: 60 * 60 * 24 * 7,

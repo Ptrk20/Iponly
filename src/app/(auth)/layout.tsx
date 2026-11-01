@@ -19,5 +19,12 @@ export default async function AuthLayout({ children }: { children: ReactNode }) 
     throw error;
   }
 
-  return children;
+  return (
+    <>
+      {children}
+      <footer className="site-footer">
+        <span>All Rights Reserved 2026 | Developed by PNase</span>
+      </footer>
+    </>
+  );
 }

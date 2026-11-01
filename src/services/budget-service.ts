@@ -218,6 +218,7 @@ export async function createBudgetIncome(
     incomeType: "salary" | "bonus" | "freelance" | "allowance" | "reimbursement" | "business" | "interest" | "gift" | "other";
     plannedAmount: string;
     expectedDate?: string;
+    receivedDate?: string;
     notes?: string;
     idempotencyKey: string;
   },
@@ -228,11 +229,13 @@ export async function createBudgetIncome(
     if (!budget) throw new BudgetRuleError("This budget could not be found.");
     assertBudgetEditable(budget);
     if (input.expectedDate) assertInBudgetMonth(budget, input.expectedDate);
+    if (input.receivedDate) assertInBudgetMonth(budget, input.receivedDate);
     const amountMinor = amountToMinor(input.plannedAmount, budget.currencyCode, true);
     const replay = await findIncomeByIdempotencyKey(userId, input.idempotencyKey, transaction);
     if (replay) {
         if (replay.budgetId !== budget.id || replay.name !== input.name || replay.plannedAmountMinor !== amountMinor ||
-            replay.incomeType !== input.incomeType || replay.expectedDate !== (input.expectedDate || null)) {
+            replay.incomeType !== input.incomeType || replay.expectedDate !== (input.expectedDate || null) ||
+            replay.receivedDate !== (input.receivedDate || null)) {
         throw new BudgetRuleError("This submission key was already used for different income.");
       }
       return replay;
@@ -242,11 +245,11 @@ export async function createBudgetIncome(
       name: input.name,
       incomeType: input.incomeType,
       plannedAmountMinor: amountMinor,
-      actualAmountMinor: 0,
+      actualAmountMinor: input.receivedDate ? amountMinor : 0,
       expectedDate: input.expectedDate || null,
-      receivedDate: null,
+      receivedDate: input.receivedDate || null,
       notes: input.notes || null,
-      status: "planned",
+      status: input.receivedDate ? "received" : "planned",
       idempotencyKey: input.idempotencyKey,
     }, transaction);
   });

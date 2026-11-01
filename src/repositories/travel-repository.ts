@@ -324,10 +324,22 @@ export async function findItineraryItemForUser(itemId: string, userId: string, d
   return item ?? null;
 }
 
+export async function findItineraryItemByIdempotencyKey(userId: string, key: string, database: SavingsExecutor = getDatabase()) {
+  const [item] = await database.select().from(travelItineraryItems)
+    .where(and(eq(travelItineraryItems.userId, userId), eq(travelItineraryItems.idempotencyKey, key)))
+    .limit(1);
+  return item ?? null;
+}
+
 export async function createItineraryItemForUser(userId: string, values: Omit<typeof travelItineraryItems.$inferInsert, "userId">, database: SavingsExecutor) {
-  const [item] = await database.insert(travelItineraryItems).values({ ...values, userId }).returning();
-  if (!item) throw new Error("The itinerary item could not be created.");
-  return item;
+  const [item] = await database.insert(travelItineraryItems).values({ ...values, userId })
+    .onConflictDoNothing().returning();
+  if (item) return item;
+  if (values.idempotencyKey) {
+    const replay = await findItineraryItemByIdempotencyKey(userId, values.idempotencyKey, database);
+    if (replay) return replay;
+  }
+  throw new Error("The itinerary item could not be created.");
 }
 
 export async function updateItineraryItemForUser(itemId: string, userId: string, values: Partial<Omit<typeof travelItineraryItems.$inferInsert, "id" | "userId" | "tripId" | "createdAt">>, database: SavingsExecutor) {
@@ -358,10 +370,22 @@ export async function findTodoForUser(todoId: string, userId: string, database: 
   return todo ?? null;
 }
 
+export async function findTodoByIdempotencyKey(userId: string, key: string, database: SavingsExecutor = getDatabase()) {
+  const [todo] = await database.select().from(travelTodos)
+    .where(and(eq(travelTodos.userId, userId), eq(travelTodos.idempotencyKey, key)))
+    .limit(1);
+  return todo ?? null;
+}
+
 export async function createTodoForUser(userId: string, values: Omit<typeof travelTodos.$inferInsert, "userId">, database: SavingsExecutor) {
-  const [todo] = await database.insert(travelTodos).values({ ...values, userId }).returning();
-  if (!todo) throw new Error("The travel task could not be created.");
-  return todo;
+  const [todo] = await database.insert(travelTodos).values({ ...values, userId })
+    .onConflictDoNothing().returning();
+  if (todo) return todo;
+  if (values.idempotencyKey) {
+    const replay = await findTodoByIdempotencyKey(userId, values.idempotencyKey, database);
+    if (replay) return replay;
+  }
+  throw new Error("The travel task could not be created.");
 }
 
 export async function updateTodoForUser(todoId: string, userId: string, values: Partial<Omit<typeof travelTodos.$inferInsert, "id" | "userId" | "tripId" | "createdAt">>, database: SavingsExecutor = getDatabase()) {

@@ -10,6 +10,11 @@ export interface UserPreferences {
   theme: ThemePreference;
   firstDayOfWeek: FirstDayPreference;
   onboardingCompleted: boolean;
+  aiActionsEnabled: boolean;
+  debtRemindersEnabled: boolean;
+  tripRemindersEnabled: boolean;
+  todoRemindersEnabled: boolean;
+  monthlyAnalyticsEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

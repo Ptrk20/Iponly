@@ -16,12 +16,16 @@ vi.mock("@/lib/ai/config", () => ({
 vi.mock("@/ai/tools", () => ({
   createReadOnlyTools: vi.fn(() => ({})),
 }));
+vi.mock("@/ai/action-tools", () => ({
+  createActionPreparationTools: vi.fn(() => ({})),
+}));
 vi.mock("@ai-sdk/openai", () => ({
   createOpenAI: vi.fn(() => ({ chat: vi.fn(() => "test-model") })),
 }));
 vi.mock("ai", async (importOriginal) => ({
   ...await importOriginal<typeof import("ai")>(),
   createGateway: vi.fn(() => vi.fn(() => "test-gateway-model")),
+  generateText: vi.fn(async () => ({ text: "I prepared this action for your review." })),
   stepCountIs: vi.fn(),
   streamText: vi.fn(() => ({
     fullStream: new ReadableStream({
@@ -34,8 +38,9 @@ vi.mock("ai", async (importOriginal) => ({
 }));
 
 import { createOpenAI } from "@ai-sdk/openai";
-import { APICallError, createGateway, streamText } from "ai";
+import { APICallError, createGateway, generateText, streamText } from "ai";
 import { POST } from "@/app/api/chat/route";
+import { createActionPreparationTools } from "@/ai/action-tools";
 import { getCurrentUser } from "@/lib/auth-session";
 import { getAIConfiguration } from "@/lib/ai/config";
 import { getUserPreferences } from "@/services/preferences-service";
@@ -69,6 +74,11 @@ describe("Iponly AI chat route", () => {
       theme: "system",
       firstDayOfWeek: "monday",
       onboardingCompleted: true,
+      aiActionsEnabled: false,
+      debtRemindersEnabled: true,
+      tripRemindersEnabled: true,
+      todoRemindersEnabled: true,
+      monthlyAnalyticsEnabled: true,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -119,7 +129,7 @@ describe("Iponly AI chat route", () => {
     expect(createOpenAI).not.toHaveBeenCalled();
   });
 
-  it("blocks every representative write request before preferences or AI configuration are loaded", async () => {
+  it("keeps representative write requests read-only when AI Actions are disabled", async () => {
     vi.mocked(getCurrentUser).mockResolvedValue(authenticatedUser);
     const writeRequests = [
       "Add ₱500 to my Maya savings.",
@@ -143,13 +153,49 @@ describe("Iponly AI chat route", () => {
 
       expect(response.status).toBe(200);
       expect(body.type).toBe("read-only");
-      expect(body.reply).toContain("can't make changes yet");
+      expect(body.reply).toContain("can't make changes while AI Actions are disabled");
       expect(body.reply).not.toContain("saved");
       expect(body.route.href.startsWith("/")).toBe(true);
     }
 
-    expect(getUserPreferences).not.toHaveBeenCalled();
+    expect(getUserPreferences).toHaveBeenCalledTimes(writeRequests.length);
     expect(getAIConfiguration).not.toHaveBeenCalled();
+  });
+
+  it("uses only the preparation flow when the authenticated user enables AI Actions", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(authenticatedUser);
+    vi.mocked(getUserPreferences).mockResolvedValue({
+      id: crypto.randomUUID(),
+      userId: authenticatedUser.id,
+      timezone: "Asia/Manila",
+      defaultCurrencyCode: "PHP",
+      locale: "en-PH",
+      theme: "system",
+      firstDayOfWeek: "monday",
+      onboardingCompleted: true,
+      aiActionsEnabled: true,
+      debtRemindersEnabled: true,
+      tripRemindersEnabled: true,
+      todoRemindersEnabled: true,
+      monthlyAnalyticsEnabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const response = await POST(new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ messages: [{ role: "user", content: "Add ₱500 to Maya Savings." }] }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      type: "action",
+      reply: "I prepared this action for your review.",
+      proposal: null,
+    });
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(createActionPreparationTools).toHaveBeenCalledOnce();
+    expect(streamText).not.toHaveBeenCalled();
   });
 
   it.each([

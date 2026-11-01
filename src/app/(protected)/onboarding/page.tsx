@@ -24,6 +24,7 @@ export default async function OnboardingPage() {
             timezone: preferences.timezone,
             theme: preferences.theme,
             firstDayOfWeek: preferences.firstDayOfWeek,
+            aiActionsEnabled: preferences.aiActionsEnabled,
           }}
           onboarding
         />

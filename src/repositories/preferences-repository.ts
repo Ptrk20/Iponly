@@ -47,6 +47,7 @@ export async function updatePreferencesForUser(
         timezone: input.timezone,
         theme: input.theme,
         firstDayOfWeek: input.firstDayOfWeek,
+        aiActionsEnabled: input.aiActionsEnabled,
         onboardingCompleted,
       })
       .onConflictDoUpdate({
@@ -57,6 +58,7 @@ export async function updatePreferencesForUser(
           timezone: input.timezone,
           theme: input.theme,
           firstDayOfWeek: input.firstDayOfWeek,
+          aiActionsEnabled: input.aiActionsEnabled,
           onboardingCompleted,
           updatedAt: new Date(),
         },

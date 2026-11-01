@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { Viewport } from "next";
 import { DM_Sans, Manrope } from "next/font/google";
+import { PwaRuntime } from "@/components/pwa-runtime";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -20,6 +21,15 @@ export const metadata: Metadata = {
   },
   description: "A clear, calm way to track your savings, budget, payments, and travel plans.",
   applicationName: "Iponly",
+  icons: {
+    icon: "/icons/iponly-icon-192.png",
+    apple: "/icons/iponly-icon-180.png",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Iponly",
+    statusBarStyle: "default",
+  },
 };
 
 export const viewport: Viewport = {
@@ -29,7 +39,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${manrope.variable} ${dmSans.variable}`}>
-      <body>{children}</body>
+      <body>
+        <PwaRuntime />
+        {children}
+      </body>
     </html>
   );
 }

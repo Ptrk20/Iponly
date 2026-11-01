@@ -3,3 +3,4 @@ export * from "./savings";
 export * from "./debt";
 export * from "./travel";
 export * from "./budget";
+export * from "./ai-actions";
