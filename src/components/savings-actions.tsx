@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useMutationForm } from "@/hooks/use-mutation-form";
 import { useFormStatus } from "react-dom";
 import { X } from "lucide-react";
 import {
@@ -30,12 +31,14 @@ export function SavingsActionDialog({
   trigger,
   open,
   onClose,
+  className = "",
 }: {
   label: string;
   children: ReactNode;
   trigger?: ReactNode;
   open?: boolean;
   onClose?: () => void;
+  className?: string;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -58,7 +61,7 @@ export function SavingsActionDialog({
       )}
       <dialog
         aria-labelledby={titleId}
-        className="savings-action-dialog"
+        className={`savings-action-dialog${className ? ` ${className}` : ""}`}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
@@ -105,16 +108,7 @@ function ActionForm({
   idempotent?: boolean;
   confirmation?: "transfer" | "adjustment" | string;
 }) {
-  const [state, formAction] = useActionState(action, { ok: false, message: "" });
-  const formRef = useRef<HTMLFormElement>(null);
-  const submittedRef = useRef(false);
-
-  useEffect(() => {
-    if (state.message) {
-      if (state.ok) formRef.current?.reset();
-      submittedRef.current = false;
-    }
-  }, [state]);
+  const { state, formAction, formRef, submittedRef } = useMutationForm(action, { ok: false, message: "" });
 
   return (
     <form

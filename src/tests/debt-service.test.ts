@@ -12,6 +12,7 @@ import {
   getDebtOverview,
   markDebtPaid,
   recordDebtPayment,
+  recordBulkInstallmentPayments,
   rescheduleDebtInstallment,
   reverseDebtPayment,
   updateDebtDetails,
@@ -68,6 +69,80 @@ describe("authenticated debt service", () => {
     expect(await getDebtDetails("debt-user-b", created.debtId, { database })).toBeNull();
   });
 
+  it("records selected installments atomically and replays without duplicate payments", async () => {
+    const created = await addDebt();
+    const details = await getDebtDetails("debt-user-a", created.debtId, { database });
+    const installments = details!.installments.map((item) => ({
+      debtId: created.debtId, installmentId: item.id, amount: "5000", idempotencyKey: crypto.randomUUID(),
+    }));
+    const input = { installments, paymentDate: "2026-11-02" };
+    await recordBulkInstallmentPayments("debt-user-a", input, database);
+    await recordBulkInstallmentPayments("debt-user-a", input, database);
+    const updated = await getDebtDetails("debt-user-a", created.debtId, { database });
+    expect(updated?.payments).toHaveLength(12);
+    expect(updated?.debt.balanceMinor).toBe(0);
+    expect(updated?.debt.status).toBe("paid");
+    expect(updated?.installments.every((item) => item.remainingAmountMinor === 0)).toBe(true);
+  });
+
+  it("rolls back all selected payments when a later row has a stale balance or belongs to another user", async () => {
+    const own = await addDebt();
+    const other = await addDebt("debt-user-b");
+    const details = await getDebtDetails("debt-user-a", own.debtId, { database });
+    const [first, second] = [...details!.installments].sort((a, b) => a.id.localeCompare(b.id));
+    for (const invalid of [
+      { debtId: own.debtId, installmentId: second.id, amount: "4999", idempotencyKey: crypto.randomUUID() },
+      { debtId: other.debtId, installmentId: second.id, amount: "5000", idempotencyKey: crypto.randomUUID() },
+    ]) {
+      await expect(recordBulkInstallmentPayments("debt-user-a", {
+        paymentDate: "2026-11-02",
+        installments: [
+          { debtId: own.debtId, installmentId: first.id, amount: "5000", idempotencyKey: crypto.randomUUID() },
+          invalid,
+        ],
+      }, database)).rejects.toThrow();
+      expect((await getDebtDetails("debt-user-a", own.debtId, { database }))?.payments).toHaveLength(0);
+    }
+  });
+
+  it("includes inferred interest only for new monthly debts with no supplied rate", async () => {
+    const input = {
+      name: "New monthly loan",
+      debtType: "installment" as const,
+      currencyCode: "PHP" as const,
+      originalAmount: "10000",
+      openingBalance: "10000",
+      regularInstallmentAmount: "1000",
+      installmentCount: 12,
+      recurrence: "monthly" as const,
+      firstDueDate: "2026-11-15",
+      includeInTotal: true,
+      balanceMode: "new" as const,
+      idempotencyKey: crypto.randomUUID(),
+    };
+    const created = await createDebt("debt-user-a", input, database);
+    const details = await getDebtDetails("debt-user-a", created.debtId, { database });
+    expect(details?.debt).toMatchObject({
+      originalPrincipalMinor: 1000000, openingBalanceMinor: 1200000, balanceMinor: 1200000,
+      annualInterestRateBasisPoints: null,
+    });
+    expect(details?.debt.notes).toContain("Inferred total interest");
+    expect(details?.adjustments).toHaveLength(0);
+    expect(details?.installments.reduce((sum, item) => sum + item.scheduledAmountMinor, 0)).toBe(1200000);
+    expect(await createDebt("debt-user-a", input, database)).toMatchObject({ debtId: created.debtId, duplicate: true });
+    for (const annualInterestRate of ["0", "12"]) {
+      const withRate = await createDebt("debt-user-a", {
+        ...input, annualInterestRate, idempotencyKey: crypto.randomUUID(),
+      }, database);
+      expect((await getDebtDetails("debt-user-a", withRate.debtId, { database }))?.debt.openingBalanceMinor).toBe(1000000);
+    }
+    const imported = await createDebt("debt-user-a", {
+      ...input, balanceMode: "current", openingBalance: "11000",
+      priorPaidInstallmentCount: 1, idempotencyKey: crypto.randomUUID(),
+    }, database);
+    expect((await getDebtDetails("debt-user-a", imported.debtId, { database }))?.debt.openingBalanceMinor).toBe(1100000);
+  });
+
   it("provides calendar due dates beyond the next ten while excluding paid and archived obligations", async () => {
     const created = await addDebt();
     const options = { database, now: new Date("2026-01-30T17:00:00Z"), timezone: "Asia/Manila" };
@@ -99,6 +174,61 @@ describe("authenticated debt service", () => {
     expect(updated.calendarInstallments.find((item) => item.id === second.id)?.dueDate.toISOString().slice(0, 10)).toBe("2026-03-05");
     await archiveDebt("debt-user-a", created.debtId, true, database);
     expect((await getDebtOverview("debt-user-a", options)).calendarInstallments).toHaveLength(0);
+  });
+
+  it("shows one current-month payment per debt and advances only after full payment", async () => {
+    const firstDebt = await addDebt();
+    const secondDebt = await addDebt();
+    const options = { database, now: new Date("2026-01-30T17:00:00Z"), timezone: "Asia/Manila" };
+    const overview = await getDebtOverview("debt-user-a", options);
+    expect(overview.nextPaymentsPerDebt).toHaveLength(2);
+    expect(overview.nextPaymentsPerDebt.map((item) => item.dueDate.toISOString().slice(0, 10)))
+      .toEqual(["2026-01-31", "2026-01-31"]);
+    const first = overview.nextPaymentsPerDebt.find((item) => item.debtId === firstDebt.debtId)!;
+    const payment = {
+      debtId: firstDebt.debtId,
+      installmentId: first.id,
+      amount: "1000",
+      paymentDate: "2026-01-31",
+      paymentType: "partial" as const,
+      description: "Installment payment",
+      idempotencyKey: crypto.randomUUID(),
+    };
+    await recordDebtPayment("debt-user-a", payment, database);
+    const partial = await getDebtOverview("debt-user-a", options);
+    expect(partial.nextPaymentsPerDebt.find((item) => item.debtId === firstDebt.debtId))
+      .toMatchObject({ id: first.id, remainingAmountMinor: 400000 });
+    await recordDebtPayment("debt-user-a", {
+      ...payment, amount: "4000", idempotencyKey: crypto.randomUUID(),
+    }, database);
+    const paid = await getDebtOverview("debt-user-a", options);
+    expect(paid.nextPaymentsPerDebt).toHaveLength(2);
+    expect(paid.nextPaymentsPerDebt.find((item) => item.debtId === firstDebt.debtId)?.dueDate.toISOString().slice(0, 10))
+      .toBe("2026-02-28");
+    expect(paid.nextPaymentsPerDebt.find((item) => item.debtId === secondDebt.debtId)?.dueDate.toISOString().slice(0, 10))
+      .toBe("2026-01-31");
+    expect((await getDebtOverview("debt-user-b", options)).nextPaymentsPerDebt).toHaveLength(0);
+    await reverseDebtPayment("debt-user-a", {
+      paymentId: (await getDebtDetails("debt-user-a", firstDebt.debtId, { database }))!.payments
+        .find((item) => item.idempotencyKey === payment.idempotencyKey)!.id,
+      reason: "Correct payment",
+      idempotencyKey: crypto.randomUUID(),
+    }, database);
+    expect((await getDebtOverview("debt-user-a", options)).nextPaymentsPerDebt
+      .find((item) => item.debtId === firstDebt.debtId)?.id).toBe(first.id);
+  });
+
+  it("selects each debt from the full schedule while keeping overdue entries separate", async () => {
+    await addDebt();
+    await addDebt();
+    const overview = await getDebtOverview("debt-user-a", {
+      database, now: new Date("2026-07-05T00:00:00Z"), timezone: "Asia/Manila",
+    });
+    expect(overview.upcomingInstallments.every((item) => item.status === "overdue")).toBe(true);
+    expect(overview.nextPaymentsPerDebt).toHaveLength(2);
+    expect(overview.nextPaymentsPerDebt.every((item) =>
+      item.dueDate.toISOString().slice(0, 10) === "2026-07-31")).toBe(true);
+    expect(overview.overdueInstallments.length).toBeGreaterThan(10);
   });
 
   it("supports guided note migration and metadata edits without rewriting the ledger", async () => {

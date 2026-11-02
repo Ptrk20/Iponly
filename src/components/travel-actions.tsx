@@ -1,6 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { useMutationForm } from "@/hooks/use-mutation-form";
+import { SectionTabs as TravelTabs } from "@/components/section-tabs";
 import { useFormStatus } from "react-dom";
 import {
   createItineraryItemAction,
@@ -70,11 +72,7 @@ function TravelForm({
   confirm?: boolean;
   autoSubmit?: boolean;
 }) {
-  const [state, formAction] = useActionState(action, initialState);
-  const formRef = useRef<HTMLFormElement>(null);
-  useEffect(() => {
-    if (state.ok && !autoSubmit) formRef.current?.reset();
-  }, [state, autoSubmit]);
+  const { state, formAction, formRef, submittedRef } = useMutationForm(action, initialState, !autoSubmit);
   return (
     <form
       action={formAction}
@@ -82,6 +80,10 @@ function TravelForm({
       data-confirm={confirm ? "true" : undefined}
       onChange={autoSubmit ? () => formRef.current?.requestSubmit() : undefined}
       onSubmit={(event) => {
+        if (submittedRef.current) {
+          event.preventDefault();
+          return;
+        }
         const form = event.currentTarget;
         if (idempotent) {
           const key = form.elements.namedItem("idempotencyKey");
@@ -89,7 +91,9 @@ function TravelForm({
         }
         if (form.dataset.confirm === "true" && !window.confirm("Record this financial expense with the selected Savings and Monthly Budget links?")) {
           event.preventDefault();
+          return;
         }
+        submittedRef.current = true;
       }}
       ref={formRef}
     >
@@ -260,6 +264,7 @@ export function SharedTripPlan({ detail }: { detail: SharedTripDetail }) {
   const canEdit = detail.role === "editor";
   return (
     <TravelTabs
+      label="Trip sections"
       tabs={[
         {
           id: "itinerary",
@@ -343,6 +348,7 @@ export function TravelTripActions({ detail, choices }: { detail: TravelTripDetai
   return (
     <div className="travel-management">
       <TravelTabs
+        label="Trip sections"
         tabs={[
           { id: "details", label: "Details", content: detailsTab },
           {
@@ -397,56 +403,6 @@ export function TravelTripActions({ detail, choices }: { detail: TravelTripDetai
           { id: "sharing", label: "Sharing", content: <TravelSharingPanel detail={detail} /> },
         ]}
       />
-    </div>
-  );
-}
-
-function TravelTabs({ tabs }: { tabs: { id: string; label: string; content: ReactNode }[] }) {
-  const [active, setActive] = useState(tabs[0]?.id ?? "");
-  const baseId = useId();
-  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
-  function onKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-    const target = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : offset ? (index + offset + tabs.length) % tabs.length : -1;
-    if (target < 0) return;
-    event.preventDefault();
-    const next = tabs[target];
-    setActive(next.id);
-    refs.current[next.id]?.focus();
-  }
-  return (
-    <div className="travel-tabs">
-      <div aria-label="Trip sections" className="travel-tablist" role="tablist">
-        {tabs.map((tab, index) => (
-          <button
-            aria-controls={`${baseId}-${tab.id}-panel`}
-            aria-selected={active === tab.id}
-            className="travel-tab"
-            id={`${baseId}-${tab.id}-tab`}
-            key={tab.id}
-            onClick={() => setActive(tab.id)}
-            onKeyDown={(event) => onKeyDown(event, index)}
-            ref={(node) => { refs.current[tab.id] = node; }}
-            role="tab"
-            tabIndex={active === tab.id ? 0 : -1}
-            type="button"
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      {tabs.map((tab) => (
-        <div
-          aria-labelledby={`${baseId}-${tab.id}-tab`}
-          className="travel-tabpanel"
-          hidden={active !== tab.id}
-          id={`${baseId}-${tab.id}-panel`}
-          key={tab.id}
-          role="tabpanel"
-        >
-          {tab.content}
-        </div>
-      ))}
     </div>
   );
 }

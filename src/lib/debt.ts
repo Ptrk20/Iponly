@@ -2,6 +2,27 @@ import { parseISO } from "date-fns";
 import type { CurrencyCode } from "@/types/domain";
 import type { DebtAdjustmentRecord, DebtInstallmentRecord, DebtPaymentAllocationRecord, DebtPaymentRecord, DebtRecord, DebtScheduleEntry } from "@/types/debt";
 
+export function calculateInstallmentInterest(
+  originalPrincipalMinor: number,
+  regularInstallmentMinor: number,
+  installmentCount: number,
+  totalScheduledAmountMinor?: number,
+) {
+  assertSafeMinor(originalPrincipalMinor);
+  assertSafeMinor(regularInstallmentMinor);
+  if (originalPrincipalMinor <= 0 || regularInstallmentMinor <= 0 ||
+    !Number.isInteger(installmentCount) || installmentCount < 1 || installmentCount > 600) {
+    throw new RangeError("Enter a valid principal, installment amount, and payment term.");
+  }
+  const totalMinor = totalScheduledAmountMinor ?? regularInstallmentMinor * installmentCount;
+  assertSafeMinor(totalMinor);
+  if (totalMinor <= 0) throw new RangeError("The scheduled total must be greater than zero.");
+  const interestMinor = Math.max(0, totalMinor - originalPrincipalMinor);
+  const openingBalanceMinor = originalPrincipalMinor + interestMinor;
+  assertSafeMinor(openingBalanceMinor);
+  return { totalMinor, interestMinor, openingBalanceMinor };
+}
+
 export function calculateDebtBalance(
   openingBalanceMinor: number,
   payments: Pick<DebtPaymentRecord, "amountMinor" | "status" | "paymentType">[],

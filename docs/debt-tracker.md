@@ -17,6 +17,10 @@ Composite foreign keys tie child rows to the same user and parent debt. Payment 
 
 ## Balance, payments, and allocations
 
+When creating a debt, choose **New debt** or **Existing debt / current balance**. For a new monthly debt with the interest-rate field blank, inferred total interest is `max(0, installment amount × installment count − original principal)`. If a schedule-total override adjusts the final installment, that actual total is used instead. The opening balance includes principal plus this inferred interest exactly once; a creation note records the inference. No extra adjustment is posted and no annual rate is guessed. The difference may include lender fees, so review the preview against your agreement.
+
+An explicitly supplied rate (including zero), non-monthly recurrence, or an existing/current-balance debt does not trigger inference. Existing debts preserve the entered current balance even if it includes interest above the original principal. New debts otherwise start at the principal amount in the creation form. Existing saved debts are unchanged.
+
 Money is stored in integer minor units. The authoritative current balance is derived as:
 
 `opening balance - posted non-reversal payments + posted balance adjustments`
@@ -27,9 +31,25 @@ Payments can be regular, partial, extra, payoff, adjustment, or fee payments. A 
 
 Partial-payment progress is derived from allocations. Reversals preserve original payment history. If a Savings account was linked, the debt payment and Savings withdrawal reversal happen in the same database transaction. A linked payment is a withdrawal from the user's Savings ledger, not a transfer and not an additional debt expense. Recording a payment does not send money to a creditor.
 
-In **Next payments**, **Mark as paid** confirms and records the installment's displayed remaining amount using today's date in the user's timezone. It creates a regular, unapportioned payment linked to that installment through the same authenticated, transactional, idempotent payment workflow as the detail page. It does not deduct a Savings account or send money. For a different payment date, partial amount, or linked Savings withdrawal, use the debt detail form instead. Quick payment is available only for active debts; paused or defaulted debts must be reactivated first. Already-paid or stale amounts exceeding the current remaining obligation are rejected by the service.
+In **Overdue installments** and **Next payments**, **Mark as paid** confirms and records the installment's displayed remaining amount using today's date in the user's timezone. It creates a regular, unapportioned payment linked to that installment through the same authenticated, transactional, idempotent payment workflow as the detail page. It does not deduct a Savings account or send money. For a different payment date, partial amount, or linked Savings withdrawal, use the debt detail form instead. Quick payment is available only for active debts; paused or defaulted debts must be reactivated first. Already-paid or stale amounts exceeding the current remaining obligation are rejected by the service.
+
+Next payments shows at most one upcoming unpaid installment per debt, ordered by due date. It selects the earliest eligible installment from the user's current calendar month onward; once that installment is fully paid, the next unpaid installment appears (normally next month for monthly plans). Partial payments remain visible for their outstanding amount. Overdue installments remain in the separate Overdue installments section. Selection uses the full schedule, not the dashboard's ten-entry limit, and the calendar continues to show all eligible obligations.
 
 ## Schedules and statuses
+
+The Overdue installments table supports row checkboxes and select-all for active debts, with **Mark selected as paid** for up to 100 installments per submission. One confirmation shows totals separately per currency. The selected remaining amounts are recorded on today's date without Savings deductions. The batch is atomic: ownership, status, or stale-balance errors roll back every payment. Retry keys prevent duplicate payments, and a successful batch clears the selection and refreshes the page. Individual row payment buttons remain available.
+
+The debt detail page keeps balance cards above tabs for Repayment progress, Schedule, Payments, Adjustments, and Details. These use the same keyboard-accessible, horizontally scrollable tabs as Travel. Hidden panels stay mounted so switching tabs preserves unsaved form input. Existing debt-status restrictions still control available actions.
+
+For active debts, the Schedule section's upper-right **Add manual installment** button opens the installment form in a modal. Remaining amounts and statuses align with their column headers on desktop; mobile retains the stacked schedule layout.
+
+The Payments tab's **Payment history** section has an upper-right **Record payment** button for active debts. It opens the existing payment form in a modal, including installment selection, optional Savings linking, allocation details, validation, and confirmation.
+
+Selecting an eligible installment fills Amount with its remaining unpaid amount in the debt's currency. The amount stays editable for partial payments; switching installments replaces it with the newly selected remaining amount. Selecting no installment clears it for manual entry.
+
+The payment modal is up to 1000px wide, with 16px input text, larger controls, two-column fields on larger screens, and a single column on phones. Its height stays within the viewport with internal scrolling.
+
+The Adjustments header provides **Record balance adjustment** for active or paused debts, opening the same spacious modal layout. Adjustment history retains the original transaction-row styling, with a wider description column (at least 200px on desktop) and the amount/correction action on the right. Reasons wrap within the first column.
 
 Supported recurrence is one-time, weekly, biweekly, monthly, and manual/custom. A generated schedule can contain at most 600 installments. Weekly and biweekly dates use whole-week increments. Monthly schedules preserve the original day; if a month is shorter, that installment falls on its final day and subsequent months resume the original day (Jan 31 → Feb 28/29 → Mar 31).
 

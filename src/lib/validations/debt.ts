@@ -19,6 +19,20 @@ const optionalGrace = z.preprocess(
 );
 const notes = z.string().trim().max(2000).optional().or(z.literal(""));
 
+export const bulkInstallmentPaymentSchema = z.object({
+  paymentDate: z.iso.date(),
+  installments: z.array(z.object({
+    debtId: uuid,
+    installmentId: uuid,
+    amount: money,
+    idempotencyKey: uuid,
+  })).min(1, "Select at least one installment.").max(100, "Select up to 100 installments at a time."),
+}).refine((value) => new Set(value.installments.map((item) => item.installmentId)).size === value.installments.length, {
+  message: "Each installment can only be selected once.",
+}).refine((value) => new Set(value.installments.map((item) => item.idempotencyKey)).size === value.installments.length, {
+  message: "Each installment requires a separate payment submission key.",
+});
+
 export const createDebtSchema = z.object({
   name: z.string().trim().min(1, "Enter a debt name.").max(100),
   creditor: z.string().trim().max(100).optional().or(z.literal("")),
@@ -26,6 +40,7 @@ export const createDebtSchema = z.object({
   currencyCode: currency,
   originalAmount: money,
   openingBalance: money,
+  balanceMode: z.enum(["new", "current"]).optional().or(z.literal("")),
   annualInterestRate: optionalMoney,
   regularInstallmentAmount: optionalMoney,
   installmentCount: optionalCount,

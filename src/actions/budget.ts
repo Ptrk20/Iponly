@@ -62,7 +62,9 @@ async function runBudgetAction(operation: (userId: string) => Promise<unknown>):
     revalidatePath("/");
     revalidatePath("/analytics");
     revalidatePath("/savings");
+    revalidatePath("/savings/[accountId]", "page");
     revalidatePath("/debt");
+    revalidatePath("/debt/[debtId]", "page");
     return { ok: true, message: "Your budget has been updated." };
   } catch (error) {
     if (error instanceof BudgetRuleError || error instanceof RangeError) {

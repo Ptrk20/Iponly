@@ -15,7 +15,22 @@ export async function getPreferencesForUser(
   userId: string,
   database: IponlyDatabase = getDatabase(),
 ) {
-  await ensureUserPreferences(userId, database);
+  const [existing] = await database
+    .select()
+    .from(userPreferences)
+    .where(eq(userPreferences.userId, userId))
+    .limit(1);
+
+  if (existing) return existing;
+
+  const [created] = await database
+    .insert(userPreferences)
+    .values({ userId })
+    .onConflictDoNothing()
+    .returning();
+
+  if (created) return created;
+
   const [preferences] = await database
     .select()
     .from(userPreferences)

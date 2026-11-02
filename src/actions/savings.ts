@@ -60,6 +60,12 @@ async function runAction(operation: (userId: string) => Promise<void>): Promise<
     revalidatePath("/savings");
     revalidatePath("/");
     revalidatePath("/savings/[accountId]", "page");
+    revalidatePath("/analytics");
+    revalidatePath("/budget");
+    revalidatePath("/debt");
+    revalidatePath("/debt/[debtId]", "page");
+    revalidatePath("/travel");
+    revalidatePath("/travel/[tripId]", "page");
     return { ok: true, message: "Your savings data has been updated." };
   } catch (error) {
     if (error instanceof SavingsRuleError || error instanceof RangeError) {

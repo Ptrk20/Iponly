@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { ComparisonBarChart, SpendingDonutChart } from "@/components/charts";
+import { SectionTabs } from "@/components/section-tabs";
 import {
   ArchiveMonthlyBudgetForm,
   BudgetAllocationEditor,
@@ -105,6 +106,11 @@ export default async function BudgetPage({ searchParams }: BudgetPageProps) {
   const { budget, summary } = data;
   const allocationByCategory = new Map(data.allocations.map(({ allocation }) => [allocation.categoryId, allocation.plannedAmountMinor]));
   const categoryById = new Map(data.categories.map((category) => [category.id, category]));
+  const allocationChartData = data.allocations.map(({ allocation }) => ({
+    name: categoryById.get(allocation.categoryId)?.name ?? "Archived category",
+    value: allocation.plannedAmountMinor,
+    color: categoryById.get(allocation.categoryId)?.color ?? "#82918c",
+  }));
   const spendingByCategory = new Map<string, number>();
   for (const expense of data.expenses) {
     if (expense.status !== "posted") continue;
@@ -147,6 +153,8 @@ export default async function BudgetPage({ searchParams }: BudgetPageProps) {
         <SummaryItem label="Debt payments" value={summary.debtPaymentMinor} currency={budget.currencyCode} />
       </div>
 
+      <SectionTabs key={budget.id} label="Budget sections" tabs={[
+        { id: "overview", label: "Overview", content: <>
       <Panel>
         <SectionHeading detail={`${monthLabel} · ${budget.name}`} title="Budget usage" />
         <div className="budget-usage">
@@ -191,11 +199,24 @@ export default async function BudgetPage({ searchParams }: BudgetPageProps) {
         </Panel>
         <Panel>
           <SectionHeading detail="Posted expenses only; linked account and debt records are counted once." title="Where your money goes" />
-          <SpendingDonutChart data={chartData} />
+          <SpendingDonutChart currencyCode={budget.currencyCode} data={chartData} />
           <Link className="text-link chart-detail-link" href="/analytics">Explore analytics <ArrowRight aria-hidden="true" size={14} /></Link>
         </Panel>
       </div>
 
+      <Panel>
+        <SectionHeading detail="Planned allocations only, not actual expenses. Unallocated income is excluded." title="Allocation breakdown" />
+        <SpendingDonutChart
+          currencyCode={budget.currencyCode}
+          data={allocationChartData}
+          emptyMessage="Set category allocations to see your budget plan."
+          label="Planned allocations by category"
+          totalLabel="Allocated"
+        />
+      </Panel>
+
+        </> },
+        { id: "plan", label: "Plan and record", content: <>
       {isEditable ? (
         <Panel>
           <SectionHeading detail="Changes are saved to your authenticated budget." title="Plan and record" />
@@ -208,14 +229,17 @@ export default async function BudgetPage({ searchParams }: BudgetPageProps) {
             today={currentDateForTimezone(preferences.timezone)}
             year={year}
           />
-          <SectionHeading detail="Allocations are plans, not spending." title="Edit category allocations" />
-          <BudgetAllocationEditor budget={budget} categories={data.categories} allocationByCategory={allocationByCategory} />
+          <div className="budget-allocation-section">
+            <SectionHeading detail="Allocations are plans, not spending." title="Edit category allocations" />
+            <BudgetAllocationEditor budget={budget} categories={data.categories} allocationByCategory={allocationByCategory} />
+          </div>
         </Panel>
       ) : (
         <Panel><p className="budget-help">This month is {budget.status}. Reopen it to edit or record transactions.</p></Panel>
       )}
 
-      <div className="budget-layout">
+        </> },
+        { id: "analytics", label: "Analytics", content: <>
         <Panel>
           <SectionHeading detail="Planned allocation compared with actual spending" title="Planned vs actual" />
           <ComparisonBarChart
@@ -227,6 +251,8 @@ export default async function BudgetPage({ searchParams }: BudgetPageProps) {
             ]}
           />
         </Panel>
+        </> },
+        { id: "activity", label: "Activity", content: <>
         <Panel>
           <SectionHeading detail="Latest posted and reversed entries" title="Recent expenses" />
           {data.expenses.length === 0 ? <EmptyState description="Your spending will appear here." title="No expenses recorded yet" /> : (
@@ -243,7 +269,6 @@ export default async function BudgetPage({ searchParams }: BudgetPageProps) {
             </ul>
           )}
         </Panel>
-      </div>
 
       {isEditable && data.unlinkedDebtPayments.length > 0 ? (
         <Panel>
@@ -261,6 +286,8 @@ export default async function BudgetPage({ searchParams }: BudgetPageProps) {
           </ul>
         </Panel>
       ) : null}
+        </> },
+      ]} />
 
       {reconciliation.issues.length ? (
         <Panel className="budget-reconciliation">

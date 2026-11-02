@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, CalendarDays, CreditCard } from "lucide-react";
+import { SectionTabs } from "@/components/section-tabs";
+import { SavingsActionDialog } from "@/components/savings-actions";
 import {
   DebtAdjustmentForm,
   DebtEditForm,
@@ -74,6 +76,8 @@ export default async function DebtDetailsPage({ params }: { params: Promise<{ de
         <MetricCard amountMinor={dueOverdue} currencyCode={debt.currencyCode} icon={CalendarDays} label="Overdue amount" supporting={`${installments.filter((item) => item.status === "overdue").length} installments`} tone="blue" />
       </div>
 
+      <SectionTabs label="Debt sections" tabs={[
+        { id: "progress", label: "Repayment progress", content: (
       <Panel>
         <SectionHeading detail="The remaining balance is derived from the opening balance, recorded payments, and adjustments." title="Repayment progress" />
         <ProgressBar
@@ -91,46 +95,25 @@ export default async function DebtDetailsPage({ params }: { params: Promise<{ de
         <p className="form-hint">Iponly does not calculate lender interest or an authoritative payoff amount.</p>
         <DebtLifecycleForms debt={debt} showRestore={debt.status === "archived"} />
       </Panel>
-
-      {debt.status !== "archived" ? (
-        <Panel>
-          <SectionHeading detail="Changes here update descriptive details only; ledger amounts are preserved." title="Edit debt details" />
-          <DebtEditForm debt={debt} />
-        </Panel>
-      ) : null}
-
-      {debt.status === "active" ? (
-        <Panel>
-          <SectionHeading detail="Review the amount and optional Savings account before recording." title="Record a payment" />
-          <DebtPaymentForm
-            accounts={accounts}
-            debt={debt}
-            installments={installments}
-            today={todayInTimezone(preferences.timezone)}
-          />
-        </Panel>
-      ) : null}
-
-      {debt.status === "active" ? (
-        <Panel>
-          <SectionHeading detail="Manual schedules can be added without rewriting existing installments." title="Add a manual installment" />
-          <ManualInstallmentForm debtId={debt.id} />
-        </Panel>
-      ) : null}
-
-      {debt.status === "active" || debt.status === "paused" ? (
-        <Panel>
-          <SectionHeading detail="Every adjustment needs a reason and remains in history." title="Record a balance adjustment" />
-          <DebtAdjustmentForm debtId={debt.id} currencyCode={debt.currencyCode} today={todayInTimezone(preferences.timezone)} />
-        </Panel>
-      ) : null}
+        ) },
+        { id: "schedule", label: "Schedule", content: (
+      <>
 
       <Panel>
-        <SectionHeading detail="Paid status comes from actual allocations. Overdue is derived using your timezone and grace period." title="Installment schedule" />
+        <SectionHeading
+          action={debt.status === "active" ? (
+            <SavingsActionDialog label="Add manual installment">
+              <p className="form-hint">Add a due date without rewriting existing installments.</p>
+              <ManualInstallmentForm debtId={debt.id} />
+            </SavingsActionDialog>
+          ) : undefined}
+          detail="Paid status comes from actual allocations. Overdue is derived using your timezone and grace period."
+          title="Installment schedule"
+        />
         {installments.length === 0 ? (
           <EmptyState description="Add a manual installment when you are ready to track a due date." title="No installments scheduled" />
         ) : (
-          <div className="schedule-table">
+          <div className="schedule-table debt-installment-schedule">
             <div className="schedule-head"><span>Installment</span><span>Due date</span><span>Remaining</span><span>Status</span></div>
             {installments.map((installment) => {
               const priorChanges = reschedulesByInstallment.get(installment.id) ?? [];
@@ -150,9 +133,26 @@ export default async function DebtDetailsPage({ params }: { params: Promise<{ de
           </div>
         )}
       </Panel>
-
+      </>
+        ) },
+        { id: "payments", label: "Payments", content: (
+      <>
       <Panel>
-        <SectionHeading detail="Reversals keep their original entry and reason." title="Payment history" />
+        <SectionHeading
+          action={debt.status === "active" ? (
+            <SavingsActionDialog className="debt-payment-dialog" label="Record payment">
+              <p className="form-hint">Review the amount and optional Savings account before recording.</p>
+              <DebtPaymentForm
+                accounts={accounts}
+                debt={debt}
+                installments={installments}
+                today={todayInTimezone(preferences.timezone)}
+              />
+            </SavingsActionDialog>
+          ) : undefined}
+          detail="Reversals keep their original entry and reason."
+          title="Payment history"
+        />
         {payments.length === 0 ? (
           <EmptyState description="Payments you record will appear here." title="No payments recorded yet" />
         ) : (
@@ -177,15 +177,27 @@ export default async function DebtDetailsPage({ params }: { params: Promise<{ de
           </div>
         )}
       </Panel>
-
+      </>
+        ) },
+        { id: "adjustments", label: "Adjustments", content: (
+      <>
       <Panel>
-        <SectionHeading detail="Principal, interest, and fees are only separated when you enter those details." title="Adjustments" />
+        <SectionHeading
+          action={debt.status === "active" || debt.status === "paused" ? (
+            <SavingsActionDialog className="debt-payment-dialog" label="Record balance adjustment">
+              <p className="form-hint">Every adjustment needs a reason and remains in history.</p>
+              <DebtAdjustmentForm debtId={debt.id} currencyCode={debt.currencyCode} today={todayInTimezone(preferences.timezone)} />
+            </SavingsActionDialog>
+          ) : undefined}
+          detail="Principal, interest, and fees are only separated when you enter those details."
+          title="Adjustments"
+        />
         {adjustments.length === 0 ? (
           <EmptyState description="Any fees, interest entries, or balance corrections will appear here." title="No adjustments recorded" />
         ) : (
           <div className="savings-transaction-list">
             {adjustments.map((adjustment) => (
-              <article className="savings-transaction-row" key={adjustment.id}>
+              <article className="savings-transaction-row debt-adjustment-row" key={adjustment.id}>
                 <span className="savings-transaction-copy">
                   <strong>{adjustment.adjustmentType.replaceAll("_", " ")}</strong>
                   <span>{formatDate(adjustment.effectiveDate.toISOString().slice(0, 10))} · {adjustment.reason}</span>
@@ -201,13 +213,23 @@ export default async function DebtDetailsPage({ params }: { params: Promise<{ de
           </div>
         )}
       </Panel>
-
-      {debt.notes ? (
+      </>
+        ) },
+        { id: "details", label: "Details", content: (
+      <>
+      {debt.status !== "archived" ? (
         <Panel>
-          <SectionHeading title="Notes" />
-          <p>{debt.notes}</p>
+          <SectionHeading detail="Changes here update descriptive details only; ledger amounts are preserved." title="Edit debt details" />
+          <DebtEditForm debt={debt} />
         </Panel>
       ) : null}
+        <Panel>
+          <SectionHeading title="Notes" />
+          <p>{debt.notes || "No notes recorded."}</p>
+        </Panel>
+      </>
+        ) },
+      ]} />
       <p className="form-hint">Recording a payment does not send money to the creditor. All figures depend on data entered by you.</p>
     </div>
   );

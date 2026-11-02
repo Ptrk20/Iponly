@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CalendarClock, CalendarDays, CreditCard } from "lucide-react";
 import { DebtPaymentCalendar } from "@/components/debt-payment-calendar";
+import { OverdueInstallments } from "@/components/overdue-installments";
 import {
   DebtLifecycleForms,
   QuickInstallmentPaymentForm,
@@ -102,17 +103,15 @@ export default async function DebtPage() {
         {overview.overdueInstallments.length === 0 ? (
           <EmptyState description="You’re currently up to date." title="No overdue installments" />
         ) : (
-          <div className="schedule-table">
-            <div className="schedule-head"><span>Debt</span><span>Due date</span><span>Remaining</span><span>Status</span></div>
-            {overview.overdueInstallments.map((installment) => (
-              <Link className="schedule-row" href={`/debt/${installment.debtId}`} key={installment.id}>
-                <strong>{installment.debtName}</strong>
-                <span>{formatDate(installment.dueDate.toISOString().slice(0, 10))}</span>
-                <strong>{formatMoney(installment.remainingAmountMinor, installment.currencyCode)}</strong>
-                <StatusBadge tone="overdue">Overdue</StatusBadge>
-              </Link>
-            ))}
-          </div>
+          <OverdueInstallments
+            installments={overview.overdueInstallments.map((item) => ({
+              id: item.id, debtId: item.debtId, debtName: item.debtName,
+              dueDate: item.dueDate.toISOString().slice(0, 10),
+              remainingAmountMinor: item.remainingAmountMinor, currencyCode: item.currencyCode,
+              canPay: overview.debts.find((debt) => debt.id === item.debtId)?.status === "active",
+            }))}
+            today={overview.today}
+          />
         )}
       </Panel>
 
@@ -133,15 +132,15 @@ export default async function DebtPage() {
               }))}
             />
           }
-          detail="Upcoming unpaid obligations"
+          detail="One upcoming unpaid installment per debt, starting this month"
           title="Next payments"
         />
-        {overview.upcomingInstallments.filter((item) => item.status !== "overdue").length === 0 ? (
+        {overview.nextPaymentsPerDebt.length === 0 ? (
           <EmptyState description="You have no upcoming scheduled installments." title="No upcoming payments" />
         ) : (
           <div className="schedule-table debt-next-payments">
             <div className="schedule-head"><span>Debt</span><span>Due date</span><span>Remaining</span><span>Status</span><span>Action</span></div>
-            {overview.upcomingInstallments.filter((item) => item.status !== "overdue").map((installment) => (
+            {overview.nextPaymentsPerDebt.map((installment) => (
               <div className="schedule-row" key={installment.id}>
                 <strong><Link href={`/debt/${installment.debtId}`}>{installment.debtName}</Link></strong>
                 <span>{formatDate(installment.dueDate.toISOString().slice(0, 10))}</span>
