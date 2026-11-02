@@ -1,14 +1,15 @@
 import "server-only";
+import { cache } from "react";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { getAuth } from "@/lib/auth";
 
-export async function getCurrentSession() {
+export const getCurrentSession = cache(async () => {
   await connection();
   const requestHeaders = await headers();
   return getAuth().api.getSession({ headers: requestHeaders });
-}
+});
 
 export async function getCurrentUser() {
   const currentSession = await getCurrentSession();

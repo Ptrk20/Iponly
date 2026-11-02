@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { useMutationForm } from "@/hooks/use-mutation-form";
 import { useFormStatus } from "react-dom";
 import {
   addBudgetIncomeAction,
@@ -47,14 +48,7 @@ function ActionForm({
   className?: string;
   variant?: "primary" | "secondary";
 }) {
-  const [state, formAction] = useActionState(action, { ok: false, message: "" });
-  const formRef = useRef<HTMLFormElement>(null);
-  const submittedRef = useRef(false);
-  useEffect(() => {
-    if (!state.message) return;
-    if (state.ok) formRef.current?.reset();
-    submittedRef.current = false;
-  }, [state]);
+  const { state, formAction, formRef, submittedRef } = useMutationForm(action, { ok: false, message: "" });
 
   return (
     <form
@@ -67,7 +61,7 @@ function ActionForm({
         }
         if (idempotent) {
           const field = event.currentTarget.elements.namedItem("idempotencyKey");
-          if (field instanceof HTMLInputElement) field.value = crypto.randomUUID();
+          if (field instanceof HTMLInputElement && !field.value) field.value = crypto.randomUUID();
         }
         submittedRef.current = true;
       }}

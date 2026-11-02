@@ -68,6 +68,7 @@ const defaultCategories = [
   { name: "Entertainment", type: "expense", color: "#c5a447" },
   { name: "Travel", type: "expense", color: "#568f9c" },
   { name: "Other", type: "other", color: "#82918c" },
+  { name: "Pets", type: "expense", color: "#b58a68" },
 ] as const;
 
 function monthDate(year: number, month: number, day: number) {

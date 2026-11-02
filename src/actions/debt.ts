@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth-session";
 import {
   addDebtAdjustmentSchema,
+  bulkInstallmentPaymentSchema,
   archiveDebtSchema,
   createDebtSchema,
   createManualInstallmentSchema,
@@ -22,6 +23,7 @@ import {
   createManualInstallment,
   markDebtPaid,
   recordDebtPayment,
+  recordBulkInstallmentPayments,
   reverseDebtAdjustment,
   rescheduleDebtInstallment,
   restoreDebt,
@@ -58,8 +60,11 @@ async function runDebtAction(operation: (userId: string) => Promise<{ debtId?: s
   try {
     const result = await operation(user.id);
     revalidatePath("/debt");
+    revalidatePath("/debt/[debtId]", "page");
     revalidatePath("/");
     revalidatePath("/savings");
+    revalidatePath("/savings/[accountId]", "page");
+    revalidatePath("/budget");
     revalidatePath("/analytics");
     if (result?.debtId) revalidatePath(`/debt/${result.debtId}`);
     return { ok: true, message: "Your debt information has been updated.", ...result };
@@ -78,7 +83,7 @@ function validationError(error: { issues: { message: string }[] }) {
 
 export async function createDebtAction(_previous: DebtActionState, formData: FormData): Promise<DebtActionState> {
   const parsed = createDebtSchema.safeParse(formValues(formData, [
-    "name", "creditor", "debtType", "currencyCode", "originalAmount", "openingBalance",
+    "name", "creditor", "debtType", "currencyCode", "originalAmount", "openingBalance", "balanceMode",
     "annualInterestRate", "regularInstallmentAmount", "installmentCount", "recurrence",
     "recurrenceInterval", "firstDueDate", "gracePeriodDays", "referenceNumber", "notes",
     "includeInTotal", "totalScheduledAmount", "priorPaidInstallmentCount", "migrationSummary", "idempotencyKey",
@@ -149,6 +154,21 @@ export async function reverseDebtPaymentAction(_previous: DebtActionState, formD
   return runDebtAction(async (userId) => {
     const result = await reverseDebtPayment(userId, parsed.data);
     return { paymentId: result.paymentId };
+  });
+}
+
+export async function recordBulkInstallmentPaymentsAction(_previous: DebtActionState, formData: FormData): Promise<DebtActionState> {
+  const raw = formData.get("installments");
+  let installments: unknown;
+  try {
+    installments = typeof raw === "string" ? JSON.parse(raw) : null;
+  } catch {
+    return { ok: false, message: "The selected installments are invalid. Refresh and try again." };
+  }
+  const parsed = bulkInstallmentPaymentSchema.safeParse({ installments, paymentDate: formData.get("paymentDate") });
+  if (!parsed.success) return validationError(parsed.error);
+  return runDebtAction(async (userId) => {
+    await recordBulkInstallmentPayments(userId, parsed.data);
   });
 }
 

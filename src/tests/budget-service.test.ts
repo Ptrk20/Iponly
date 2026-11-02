@@ -49,7 +49,9 @@ describe("budget service with isolated PostgreSQL", () => {
       idempotencyKey: crypto.randomUUID(),
     }, database);
     const categories = await findCategoriesForUser("budget-user-a", true, database);
-    expect(categories).toHaveLength(15);
+    expect(categories).toHaveLength(16);
+    const pets = categories.find((category) => category.name === "Pets");
+    expect(pets).toMatchObject({ categoryType: "expense", isActive: true });
     await expect(createMonthlyBudget("budget-user-a", {
       year: 2026,
       month: 10,

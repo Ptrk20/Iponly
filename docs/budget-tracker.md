@@ -4,6 +4,10 @@ Phase 5 adds authenticated, persistent monthly budgets. The Budget page supports
 
 ## Accounting model
 
+The Overview tab includes an Allocation breakdown donut chart showing planned category allocations, their colors, and currency-formatted amounts. It is separate from the actual-spending chart and excludes unallocated income and zero allocations.
+
+Existing monthly budgets use Overview, Plan and record, Analytics, and Activity tabs. Month navigation, summary totals, budget status controls, and linked-transaction warnings remain outside the tabs. Panels stay mounted to preserve unsaved form input when switching tabs; closed and archived months retain their existing read-only restrictions. Months without a budget still show the create/copy setup.
+
 The system keeps these values separate:
 
 - **Planned income** is the sum of planned amounts from non-cancelled income sources.
@@ -21,6 +25,8 @@ Amounts are stored as integer minor units and calculations reject unsafe integer
 The monthly budget, income, categories, allocations, and expense records are owned by the authenticated user. Server Actions obtain identity from the server session; a submitted record ID is always looked up with that owner. Composite foreign keys constrain same-user references and budget currency where applicable. Idempotency keys protect create/receive/reverse operations from duplicate submissions.
 
 Categories are per-user. Default categories are initialized lazily and can be renamed, reordered, recolored, given an icon, archived, or restored. Existing entries retain their category reference if the category is archived. Duplicate names are not created by archiving and recreating a category.
+
+Pets is included as a default expense category for allocations and pet-related spending. Missing defaults are added when the Budget page loads, including for existing users.
 
 To edit an allocation, choose an active category from the dropdown, update its prefilled planned amount, and select **Save allocation**.
 

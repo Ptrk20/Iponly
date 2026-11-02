@@ -28,11 +28,23 @@ export interface TrendDatum {
   [key: string]: string | number;
 }
 
-export function SpendingDonutChart({ data, currencyCode = "PHP" }: { data: ChartDatum[]; currencyCode?: CurrencyCode }) {
+export function SpendingDonutChart({
+  data,
+  currencyCode = "PHP",
+  label = "Spending by category",
+  totalLabel = "Spent",
+  emptyMessage = "No spending to show yet.",
+}: {
+  data: ChartDatum[];
+  currencyCode?: CurrencyCode;
+  label?: string;
+  totalLabel?: string;
+  emptyMessage?: string;
+}) {
   const visibleData = data.filter((item) => item.value > 0);
 
   if (visibleData.length === 0) {
-    return <div className="chart-empty">No spending to show yet.</div>;
+    return <div className="chart-empty">{emptyMessage}</div>;
   }
 
   const totalMinor = visibleData.reduce((total, item) => total + item.value, 0);
@@ -42,7 +54,7 @@ export function SpendingDonutChart({ data, currencyCode = "PHP" }: { data: Chart
   return (
     <div className="donut-chart-layout">
       <div
-        aria-label={`Spending by category. ${accessibleSummary}. Total: ${formatMoney(totalMinor, currencyCode)}.`}
+        aria-label={`${label}. ${accessibleSummary}. Total: ${formatMoney(totalMinor, currencyCode)}.`}
         className="donut-chart-visual"
         role="img"
       >
@@ -62,7 +74,7 @@ export function SpendingDonutChart({ data, currencyCode = "PHP" }: { data: Chart
           </PieChart>
         </ResponsiveContainer>
         <div aria-hidden="true" className="donut-center">
-          <span>Spent</span>
+          <span>{totalLabel}</span>
           <strong>{formatMoney(totalMinor, currencyCode)}</strong>
         </div>
       </div>

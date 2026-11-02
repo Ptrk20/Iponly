@@ -35,11 +35,9 @@ export const instant = false;
 
 export default async function HomePage() {
   const currentUser = await requireUser();
-  const [savings, preferences] = await Promise.all([
+  const preferences = await getUserPreferences(currentUser.id);
+  const [savings, debtOverview, budget, travel] = await Promise.all([
     getSavingsOverview(currentUser.id),
-    getUserPreferences(currentUser.id),
-  ]);
-  const [debtOverview, budget, travel] = await Promise.all([
     getDebtOverview(currentUser.id, { timezone: preferences.timezone }),
     getCurrentBudgetSummary(currentUser.id, preferences.defaultCurrencyCode, preferences.timezone),
     getTravelDashboardSummary(currentUser.id, preferences.timezone),

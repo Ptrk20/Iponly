@@ -12,10 +12,16 @@ import {
 describe("preference ownership", () => {
   let client: PGlite;
   let database: IponlyDatabase;
+  let queries: string[];
 
   beforeEach(async () => {
     client = new PGlite();
-    const testDatabase = drizzle({ client, schema });
+    queries = [];
+    const testDatabase = drizzle({
+      client,
+      schema,
+      logger: { logQuery: (query) => { queries.push(query); } },
+    });
     database = testDatabase as unknown as IponlyDatabase;
     await migrate(testDatabase, { migrationsFolder: "src/db/migrations" });
     await testDatabase.insert(schema.user).values([
@@ -66,5 +72,38 @@ describe("preference ownership", () => {
     const first = await getPreferencesForUser("user-a", database);
     const second = await getPreferencesForUser("user-a", database);
     expect(first.id).toBe(second.id);
+  });
+
+  it("loads existing preferences with one read and no write", async () => {
+    const initialized = await getPreferencesForUser("user-a", database);
+    queries.length = 0;
+
+    const preferences = await getPreferencesForUser("user-a", database);
+
+    expect(preferences.id).toBe(initialized.id);
+    expect(queries).toHaveLength(1);
+    expect(queries[0]).toMatch(/^select /i);
+  });
+
+  it("initializes missing preferences with a read and an insert returning the defaults", async () => {
+    queries.length = 0;
+
+    const preferences = await getPreferencesForUser("user-a", database);
+
+    expect(preferences.userId).toBe("user-a");
+    expect(queries).toHaveLength(2);
+    expect(queries[0]).toMatch(/^select /i);
+    expect(queries[1]).toMatch(/^insert .* returning /i);
+  });
+
+  it("handles concurrent initialization without duplicate preferences", async () => {
+    const [first, second] = await Promise.all([
+      getPreferencesForUser("user-a", database),
+      getPreferencesForUser("user-a", database),
+    ]);
+
+    expect(first.id).toBe(second.id);
+    const rows = await database.select().from(schema.userPreferences);
+    expect(rows).toHaveLength(1);
   });
 });

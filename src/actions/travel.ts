@@ -79,10 +79,12 @@ async function runTravelAction(operation: (userId: string) => Promise<unknown>):
   try {
     await operation(user.id);
     revalidatePath("/travel");
+    revalidatePath("/travel/[tripId]", "page");
     revalidatePath("/");
     revalidatePath("/analytics");
     revalidatePath("/budget");
     revalidatePath("/savings");
+    revalidatePath("/savings/[accountId]", "page");
     return { ok: true, message: "Your travel plan has been updated." };
   } catch (error) {
     if (error instanceof TravelRuleError || error instanceof RangeError) {

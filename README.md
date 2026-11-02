@@ -15,6 +15,8 @@ The v1.0 release includes authenticated Savings, Debt & Installments, Monthly Bu
 - Neon PostgreSQL through the server-only Neon WebSocket pool and Drizzle ORM.
 - Drizzle schema/migrations for Better Auth, preferences, Savings, Debt & Installments, Budget, Travel, and opt-in Web Push subscriptions.
 - User-owned operations follow Server Action → Zod validation → service → scoped repository → Drizzle.
+- Successful Savings, Debt, Budget, and Travel form mutations refresh the current route without a full reload. Forms release submission locks after each completed request and explicitly clear hidden idempotency keys after success so a new entry gets a new key; unsuccessful attempts retain their key for safe retries. Debt creation returns to a fresh first wizard step after saving.
+- Session and preference reads are deduplicated within each React server render using React `cache`, not persisted across requests or users. Existing preferences load with one read and no initialization write. Dashboard summary queries run concurrently after resolving preferences.
 - Savings accounts, transaction history, goals, debts, installment schedules, payments, monthly budgets, and travel plans are persisted for the authenticated user. Analytics reports authenticated Savings, Debt, Budget, and Travel activity.
 
 ## Local setup

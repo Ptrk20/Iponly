@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import {
   ensureUserPreferences,
   getPreferencesForUser,
@@ -10,9 +11,9 @@ export async function initializeUserPreferences(userId: string) {
   await ensureUserPreferences(userId);
 }
 
-export async function getUserPreferences(userId: string) {
+export const getUserPreferences = cache(async (userId: string) => {
   return getPreferencesForUser(userId);
-}
+});
 
 export async function saveUserPreferences(
   userId: string,

@@ -6,6 +6,7 @@ import {
   calculateDebtBalance,
   calculateDebtProgress,
   calculateInstallmentRemaining,
+  calculateInstallmentInterest,
   calculateNextInstallment,
   calculateRemainingInstallmentCount,
   calculateTotalDebt,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/debt";
 import { formatMoney } from "@/lib/money";
 import { createTransactionForUser } from "@/repositories/account-transaction-repository";
+import type { SavingsDatabaseTransaction } from "@/repositories/account-transaction-repository";
 import {
   findAccountsForUser,
   getBalanceForAccount,
@@ -27,6 +29,8 @@ import {
   syncDebtPaymentWithBudgetInTransaction,
 } from "@/services/budget-service";
 import type { CurrencyCode } from "@/types/domain";
+import { bulkInstallmentPaymentSchema } from "@/lib/validations/debt";
+import type { z } from "zod";
 import type { DebtAdjustmentType, DebtPaymentAllocationInput, DebtPaymentType, DebtRecord } from "@/types/debt";
 import {
   createAdjustmentForDebtAndUser,
@@ -143,6 +147,7 @@ export async function createDebt(
     currencyCode: CurrencyCode;
     originalAmount: string;
     openingBalance: string;
+    balanceMode?: "new" | "current" | "";
     annualInterestRate?: string;
     regularInstallmentAmount?: string;
     installmentCount?: number;
@@ -161,22 +166,38 @@ export async function createDebt(
   database: IponlyDatabase = getDatabase(),
 ) {
   const originalPrincipalMinor = minorAmount(input.originalAmount, input.currencyCode);
-  const openingBalanceMinor = minorAmount(input.openingBalance, input.currencyCode, true);
+  const enteredBalanceMinor = minorAmount(input.openingBalance, input.currencyCode, true);
   const regularInstallmentMinor = input.regularInstallmentAmount
     ? minorAmount(input.regularInstallmentAmount, input.currencyCode)
     : null;
   const annualInterestRateBasisPoints = input.annualInterestRate
     ? percentageToBasisPoints(input.annualInterestRate)
     : null;
+  if (input.balanceMode === "new" && (input.priorPaidInstallmentCount || input.migrationSummary?.trim())) {
+    throw new DebtRuleError("Select existing debt when importing prior payments or a current balance.");
+  }
+  const inferredInterest = input.balanceMode === "new" && input.recurrence === "monthly" &&
+    annualInterestRateBasisPoints === null && regularInstallmentMinor !== null && input.installmentCount
+    ? calculateInstallmentInterest(
+      originalPrincipalMinor,
+      regularInstallmentMinor,
+      input.installmentCount,
+      input.totalScheduledAmount ? minorAmount(input.totalScheduledAmount, input.currencyCode) : undefined,
+    )
+    : null;
+  const openingBalanceMinor = inferredInterest?.openingBalanceMinor ?? enteredBalanceMinor;
   const notes = [
     input.notes?.trim(),
+    inferredInterest
+      ? `Inferred total interest from scheduled repayments: ${formatMoney(inferredInterest.interestMinor, input.currencyCode)}. Included in the opening balance; not an annual interest rate.`
+      : null,
     input.priorPaidInstallmentCount !== undefined || input.migrationSummary?.trim()
       ? `Migrated from notes: ${input.priorPaidInstallmentCount ?? 0} prior installments reported paid.${input.migrationSummary?.trim() ? ` ${input.migrationSummary.trim()}` : ""} Historical payments are summarized only and are not recorded as Iponly transactions.`
       : null,
   ].filter(Boolean).join("\n\n") || null;
   const installmentCount = input.installmentCount ?? (input.recurrence === "one_time" ? 1 : undefined);
 
-  if (openingBalanceMinor > originalPrincipalMinor) {
+  if (openingBalanceMinor > originalPrincipalMinor && !inferredInterest && input.balanceMode !== "current") {
     throw new DebtRuleError("The remaining balance cannot exceed the original amount.");
   }
   if (!input.firstDueDate) {
@@ -351,11 +372,11 @@ export async function recordDebtPayment(
       unapportionedAmount: string;
     };
   },
-  database: IponlyDatabase = getDatabase(),
+  database: IponlyDatabase | SavingsDatabaseTransaction = getDatabase(),
 ) {
   return database.transaction(async (transaction) => {
     const debt = await lockDebtForUser(input.debtId, userId, transaction);
-    if (!debt || debt.status !== "active") throw new DebtRuleError("Payments can only be recorded for an active debt.");
+    if (!debt) throw new DebtRuleError("Payments can only be recorded for an active debt.");
     const amountMinor = minorAmount(input.amount, debt.currencyCode);
     const paymentDate = dayAtNoonUtc(input.paymentDate);
     const duplicate = await findPaymentByIdempotencyKey(userId, input.idempotencyKey, transaction);
@@ -380,6 +401,7 @@ export async function recordDebtPayment(
         duplicate: true,
       };
     }
+    if (debt.status !== "active") throw new DebtRuleError("Payments can only be recorded for an active debt.");
 
     const payments = await findPaymentsForDebtAndUser(debt.id, userId, transaction);
     const adjustments = await findAdjustmentsForDebtAndUser(debt.id, userId, transaction);
@@ -502,6 +524,45 @@ export async function recordDebtPayment(
       currencyCode: debt.currencyCode,
       duplicate: false,
     };
+  });
+}
+
+export async function recordBulkInstallmentPayments(
+  userId: string,
+  input: z.infer<typeof bulkInstallmentPaymentSchema>,
+  database: IponlyDatabase = getDatabase(),
+) {
+  const parsed = bulkInstallmentPaymentSchema.safeParse(input);
+  if (!parsed.success) throw new DebtRuleError(parsed.error.issues[0].message);
+  return database.transaction(async (transaction) => {
+    const entries = [...parsed.data.installments].sort((a, b) =>
+      a.debtId.localeCompare(b.debtId) || a.installmentId.localeCompare(b.installmentId));
+    for (const entry of entries) {
+      const debt = await lockDebtForUser(entry.debtId, userId, transaction);
+      if (!debt) throw new DebtRuleError("This debt could not be found.");
+      const duplicate = await findPaymentByIdempotencyKey(userId, entry.idempotencyKey, transaction);
+      if (duplicate) {
+        const allocations = await findAllocationsForDebtAndUser(debt.id, userId, transaction);
+        if (!allocations.some((item) => item.paymentId === duplicate.id && item.installmentId === entry.installmentId)) {
+          throw new DebtRuleError("This payment submission key was already used for a different installment.");
+        }
+      }
+      if (!duplicate) {
+        const installment = await findInstallmentForUser(entry.installmentId, userId, transaction);
+        if (!installment || installment.debtId !== debt.id) throw new DebtRuleError("This installment could not be found.");
+        const allocations = await findAllocationsForDebtAndUser(debt.id, userId, transaction);
+        const remaining = calculateInstallmentRemaining(installment, allocations.filter((item) => item.installmentId === installment.id));
+        if (minorAmount(entry.amount, debt.currencyCode) !== remaining) {
+          throw new DebtRuleError("An installment balance has changed. Refresh and review your selection before trying again.");
+        }
+      }
+      await recordDebtPayment(userId, {
+        ...entry,
+        paymentDate: parsed.data.paymentDate,
+        paymentType: "regular",
+        description: "Overdue installment marked as paid",
+      }, transaction);
+    }
   });
 }
 
@@ -845,6 +906,16 @@ export async function getDebtOverview(
     ).map((installment) => ({ ...installment, debtName: debt.name, creditor: debt.creditor, currencyCode: debt.currencyCode })),
   ).sort((left, right) => left.dueDate.getTime() - right.dueDate.getTime());
   const upcomingInstallments = calendarInstallments.slice(0, 10);
+  const nextPaymentDebtIds = new Set<string>();
+  const nextPaymentsPerDebt = calendarInstallments.filter((installment) => {
+    if (
+      installment.status === "overdue" ||
+      dateKey(installment.dueDate).slice(0, 7) < month ||
+      nextPaymentDebtIds.has(installment.debtId)
+    ) return false;
+    nextPaymentDebtIds.add(installment.debtId);
+    return true;
+  });
   const totalOutstandingByCurrency = calculateTotalDebt(activeDebts.map((debt) => ({
     balanceMinor: debt.balanceMinor,
     currencyCode: debt.currencyCode,
@@ -863,6 +934,7 @@ export async function getDebtOverview(
     overdueInstallments,
     overdueByCurrency: sumInstallmentsByCurrency(overdueInstallments),
     upcomingInstallments,
+    nextPaymentsPerDebt,
     calendarInstallments,
     activeCount: activeDebts.filter((debt) => debt.status === "active").length,
     paidThisMonthByCurrency,

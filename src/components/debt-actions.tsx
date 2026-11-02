@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useMutationForm } from "@/hooks/use-mutation-form";
 import { useFormStatus } from "react-dom";
 import {
   addDebtAdjustmentAction,
@@ -20,7 +21,7 @@ import {
 } from "@/actions/debt";
 import { formatMoney, minorToMajor, parseMoneyInput } from "@/lib/money";
 import { formatDate } from "@/lib/dates";
-import { generateDebtSchedule } from "@/lib/debt";
+import { calculateInstallmentInterest, generateDebtSchedule } from "@/lib/debt";
 import type { CurrencyCode, SavingsAccountRecord } from "@/types/domain";
 import type { DebtAdjustmentRecord, DebtInstallmentRecord, DebtPaymentRecord, DebtRecord } from "@/types/debt";
 
@@ -48,15 +49,7 @@ function ActionForm({
   className?: string;
   buttonVariant?: "primary" | "secondary";
 }) {
-  const [state, formAction] = useActionState(action, { ok: false, message: "" });
-  const formRef = useRef<HTMLFormElement>(null);
-  const submittedRef = useRef(false);
-
-  useEffect(() => {
-    if (!state.message) return;
-    if (state.ok) formRef.current?.reset();
-    submittedRef.current = false;
-  }, [state]);
+  const { state, formAction, formRef, submittedRef } = useMutationForm(action, { ok: false, message: "" });
 
   return (
     <form
@@ -106,6 +99,9 @@ type PreviewValues = {
   installmentCount: string;
   regularInstallmentAmount: string;
   totalScheduledAmount: string;
+  originalAmount: string;
+  annualInterestRate: string;
+  balanceMode: "new" | "current";
 };
 
 export function DebtCreateForm({
@@ -115,9 +111,17 @@ export function DebtCreateForm({
   defaultCurrency: CurrencyCode;
   today: string;
 }) {
-  const [state, formAction] = useActionState(createDebtAction, { ok: false, message: "" });
+  const [resetVersion, setResetVersion] = useState(0);
+  const { state, formAction, formRef, submittedRef } = useMutationForm<DebtActionState>(async (previous, formData) => {
+    const result = await createDebtAction(previous, formData);
+    if (result.ok) setResetVersion((version) => version + 1);
+    return result;
+  }, { ok: false, message: "" });
   return (
     <DebtCreateFormFields
+      key={resetVersion}
+      formRef={formRef}
+      submittedRef={submittedRef}
       defaultCurrency={defaultCurrency}
       formAction={formAction}
       state={state}
@@ -127,17 +131,20 @@ export function DebtCreateForm({
 }
 
 function DebtCreateFormFields({
+  formRef,
+  submittedRef,
   defaultCurrency,
   formAction,
   state,
   today,
 }: {
+  formRef: RefObject<HTMLFormElement | null>;
+  submittedRef: RefObject<boolean>;
   defaultCurrency: CurrencyCode;
   formAction: (formData: FormData) => void;
   state: DebtActionState;
   today: string;
 }) {
-  const formRef = useRef<HTMLFormElement>(null);
   const [step, setStep] = useState(1);
   const [previewValues, setPreviewValues] = useState<PreviewValues>({
     currencyCode: defaultCurrency,
@@ -146,6 +153,9 @@ function DebtCreateFormFields({
     installmentCount: "12",
     regularInstallmentAmount: "",
     totalScheduledAmount: "",
+    originalAmount: "",
+    annualInterestRate: "",
+    balanceMode: "new",
   });
   const schedulePreview = useMemo(() => {
     if (previewValues.recurrence === "custom" || !previewValues.firstDueDate) return { entries: [], error: "" };
@@ -171,6 +181,25 @@ function DebtCreateFormFields({
     }
   }, [previewValues]);
   const scheduleTotal = schedulePreview.entries.reduce((total, entry) => total + entry.scheduledAmountMinor, 0);
+  const inferInterest = previewValues.balanceMode === "new" &&
+    previewValues.recurrence === "monthly" && !previewValues.annualInterestRate.trim();
+  const principalMinor = parseMoneyInput(previewValues.originalAmount, previewValues.currencyCode);
+  const installmentMinor = parseMoneyInput(previewValues.regularInstallmentAmount, previewValues.currencyCode);
+  let interestPreview: ReturnType<typeof calculateInstallmentInterest> | null = null;
+  let interestError = "";
+  if (inferInterest && principalMinor !== null && principalMinor > 0 && installmentMinor !== null && schedulePreview.entries.length > 0) {
+    try {
+      interestPreview = calculateInstallmentInterest(
+        principalMinor,
+        installmentMinor,
+        Number(previewValues.installmentCount),
+        scheduleTotal,
+      );
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+      interestError = error.message;
+    }
+  }
 
   function continueToNextStep() {
     const invalidField = formRef.current?.querySelector<HTMLElement>(`[data-wizard-step="${step}"] :invalid`);
@@ -201,9 +230,17 @@ function DebtCreateFormFields({
           setPreviewValues((current) => ({ ...current, regularInstallmentAmount: target.value }));
         } else if (target.name === "totalScheduledAmount") {
           setPreviewValues((current) => ({ ...current, totalScheduledAmount: target.value }));
+        } else if (target.name === "originalAmount" || target.name === "annualInterestRate") {
+          setPreviewValues((current) => ({ ...current, [target.name]: target.value }));
+        } else if (target.name === "balanceMode") {
+          setPreviewValues((current) => ({ ...current, balanceMode: target.value === "new" ? "new" : "current" }));
         }
       }}
       onSubmit={(event) => {
+        if (submittedRef.current) {
+          event.preventDefault();
+          return;
+        }
         if (step !== 3) {
           event.preventDefault();
           continueToNextStep();
@@ -211,6 +248,7 @@ function DebtCreateFormFields({
         }
         const key = event.currentTarget.elements.namedItem("idempotencyKey");
         if (key instanceof HTMLInputElement && !key.value) key.value = crypto.randomUUID();
+        submittedRef.current = true;
       }}
     >
       <ol aria-label="Debt setup steps" className="debt-wizard-progress">
@@ -247,8 +285,23 @@ function DebtCreateFormFields({
             </select>
           </Field>
           <Field label="Original amount"><input inputMode="decimal" min="0.01" name="originalAmount" placeholder="0.00" required={step === 1} step="0.01" /></Field>
-          <Field label="Remaining balance"><input inputMode="decimal" min="0" name="openingBalance" placeholder="0.00" required={step === 1} step="0.01" /></Field>
+          <Field label="Tracking">
+            <select defaultValue="new" name="balanceMode">
+              <option value="new">New debt</option>
+              <option value="current">Existing debt / current balance</option>
+            </select>
+          </Field>
+          {previewValues.balanceMode === "new" ? (
+            <Field key="calculated-opening-balance" label="Opening balance (calculated)">
+              <input name="openingBalance" readOnly value={interestPreview
+                ? String(minorToMajor(interestPreview.openingBalanceMinor, previewValues.currencyCode))
+                : previewValues.originalAmount} />
+            </Field>
+          ) : (
+            <Field key="current-opening-balance" label="Remaining balance"><input inputMode="decimal" min="0" name="openingBalance" placeholder="0.00" required={step === 1} step="0.01" /></Field>
+          )}
         </div>
+        <p className="form-hint">New monthly debts with no interest rate include inferred interest from the schedule. For an existing debt, enter your current balance including any interest already owed; it will not be increased automatically.</p>
       </section>
 
       <section aria-labelledby="debt-wizard-step-2" data-wizard-step="2" hidden={step !== 2}>
@@ -318,12 +371,20 @@ function DebtCreateFormFields({
           <p>Use your current remaining balance and enter only future unpaid installments. Past payments stay a summary and are not added as transactions.</p>
           <div className="savings-filter-form">
             <Field label="Previously paid installments (optional)">
-              <input max="600" min="0" name="priorPaidInstallmentCount" type="number" />
+              <input disabled={previewValues.balanceMode === "new"} max="600" min="0" name="priorPaidInstallmentCount" type="number" />
             </Field>
             <Field label="Historical payment summary (optional)">
-              <textarea maxLength={2000} name="migrationSummary" rows={2} placeholder="For example: 5 of 12 installments paid before Iponly tracking." />
+              <textarea disabled={previewValues.balanceMode === "new"} maxLength={2000} name="migrationSummary" rows={2} placeholder="For example: 5 of 12 installments paid before Iponly tracking." />
             </Field>
           </div>
+          {interestError ? <p className="form-status" role="alert">{interestError}</p> : null}
+          {interestPreview && principalMinor !== null ? (
+            <div className="debt-migration-guide" aria-live="polite">
+              <strong>Inferred total interest: {formatMoney(interestPreview.interestMinor, previewValues.currencyCode)}</strong>
+              <p>Scheduled repayments {formatMoney(interestPreview.totalMinor, previewValues.currencyCode)} − original amount {formatMoney(principalMinor, previewValues.currencyCode)}.</p>
+              <p>Opening remaining balance: {formatMoney(interestPreview.openingBalanceMinor, previewValues.currencyCode)}. This includes inferred interest once, not an annual interest rate. The difference may include lender fees.</p>
+            </div>
+          ) : null}
         </div>
         <p className="form-hint">Calculated balances depend on the information you enter. Iponly does not contact lenders or process payments.</p>
       </section>
@@ -415,6 +476,7 @@ export function DebtPaymentForm({
   accounts: (SavingsAccountRecord & { balanceMinor: number })[];
   today: string;
 }) {
+  const amountRef = useRef<HTMLInputElement>(null);
   const eligible = installments.filter((item) =>
     item.status === "scheduled" || item.status === "partially_paid" || item.status === "overdue",
   );
@@ -439,7 +501,18 @@ export function DebtPaymentForm({
       <Hidden name="debtId" value={debt.id} />
       <div className="savings-filter-form">
         <Field label="Installment (optional)">
-          <select defaultValue="" name="installmentId">
+          <select
+            defaultValue=""
+            name="installmentId"
+            onChange={(event) => {
+              const installment = eligible.find((item) => item.id === event.target.value);
+              if (amountRef.current) {
+                amountRef.current.value = installment
+                  ? String(minorToMajor(installment.remainingAmountMinor, debt.currencyCode))
+                  : "";
+              }
+            }}
+          >
             <option value="">No installment · extra/manual payment</option>
             {eligible.map((item) => (
               <option key={item.id} value={item.id}>
@@ -449,7 +522,7 @@ export function DebtPaymentForm({
           </select>
         </Field>
         <Field label="Amount">
-          <input autoComplete="off" inputMode="decimal" min="0.01" name="amount" placeholder="0.00" required step="0.01" />
+          <input autoComplete="off" inputMode="decimal" min="0.01" name="amount" placeholder="0.00" ref={amountRef} required step="0.01" />
         </Field>
         <Field label="Payment type">
           <select defaultValue="regular" name="paymentType">
